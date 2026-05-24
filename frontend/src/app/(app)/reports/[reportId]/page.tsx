@@ -45,7 +45,7 @@ export default function ReportDetailPage({ params }: ReportDetailPageProps) {
   const { reportId } = use(params);
   const typedId = reportId as Id<'weeklyReports'>;
   const report = useQuery(api.reports.getReport, { reportId: typedId });
-  const generate = useAction(api.reports.generateReport);
+  const generate = useAction(api.reportsActions.generateReport);
   const [showRegen, setShowRegen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);

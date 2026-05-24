@@ -33,7 +33,7 @@ function snippet(md: string | null): string {
 export default function ReportsPage() {
   const router = useRouter();
   const reports = useQuery(api.reports.listReports, {});
-  const generate = useAction(api.reports.generateReport);
+  const generate = useAction(api.reportsActions.generateReport);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

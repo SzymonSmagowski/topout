@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from 'convex/react';
 import { Activity, Flame, Target, TrendingUp } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback } from 'react';
@@ -23,6 +22,7 @@ import type { Id } from '@convex/_generated/dataModel';
 
 import { gradeStyle } from '@/lib/grade-colors';
 import type { VGrade } from '@/lib/grades';
+import { useAuthedQuery } from '@/lib/use-authed-query';
 
 const WINDOWS = ['7d', '30d', '90d', 'all'] as const;
 export type TimeWindow = (typeof WINDOWS)[number];
@@ -61,11 +61,11 @@ export function Dashboard({ userId, variant = 'default' }: DashboardProps) {
     [router, searchParams],
   );
 
-  const kpis = useQuery(api.dashboard.kpiStats, { userId, window: win });
-  const sendPyramid = useQuery(api.dashboard.sendPyramid, { userId, window: win });
-  const weeklyVolume = useQuery(api.dashboard.weeklyVolume, { userId, window: win });
-  const gradeDist = useQuery(api.dashboard.gradeAttemptDist, { userId, window: win });
-  const sendRateTrend = useQuery(api.dashboard.sendRateTrend, { userId, window: win });
+  const kpis = useAuthedQuery(api.dashboard.kpiStats, { userId, window: win });
+  const sendPyramid = useAuthedQuery(api.dashboard.sendPyramid, { userId, window: win });
+  const weeklyVolume = useAuthedQuery(api.dashboard.weeklyVolume, { userId, window: win });
+  const gradeDist = useAuthedQuery(api.dashboard.gradeAttemptDist, { userId, window: win });
+  const sendRateTrend = useAuthedQuery(api.dashboard.sendRateTrend, { userId, window: win });
 
   return (
     <section className="space-y-6" aria-label="Climbing dashboard">

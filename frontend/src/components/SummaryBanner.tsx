@@ -16,9 +16,9 @@ export type SummaryState =
 
 /** Convert the row's status + summary fields into a SummaryState. */
 export function summaryStateFrom(row: {
-  readonly summary: string | null;
+  readonly summary: string | null | undefined;
   readonly summaryStatus: 'pending' | 'ok' | 'err';
-  readonly summaryError: string | null;
+  readonly summaryError: string | null | undefined;
 }): SummaryState {
   switch (row.summaryStatus) {
     case 'pending':

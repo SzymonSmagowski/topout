@@ -19,7 +19,7 @@ export default function PartnerDashboardPage({ params }: PartnerPageProps) {
   const typedId = userId as Id<'users'>;
 
   const partner = useQuery(api.users.getPublic, { userId: typedId });
-  const isFollowing = useQuery(api.follows.isFollowing, { userId: typedId });
+  const isFollowing = useQuery(api.follows.isFollowing, { targetUserId: typedId });
   const follow = useMutation(api.follows.follow);
   const [following, setFollowing] = useState(false);
   const [error, setError] = useState<string | null>(null);

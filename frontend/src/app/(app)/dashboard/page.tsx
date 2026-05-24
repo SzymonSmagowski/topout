@@ -7,9 +7,16 @@ import Link from 'next/link';
 import { api } from '@convex/_generated/api';
 
 import { Dashboard } from '@/components/Dashboard';
+import { useAuthedQuery } from '@/lib/use-authed-query';
 
 export default function DashboardPage() {
   const viewer = useQuery(api.users.viewer, {});
+  // Empty-state check: zero sessions logged. `kpiStats` already gates on auth
+  // via requireFollowing(self), so we just count sessions from its return.
+  const kpis = useAuthedQuery(
+    api.dashboard.kpiStats,
+    viewer ? { userId: viewer._id, window: 'all' } : 'skip',
+  );
 
   if (viewer === undefined) {
     return <DashboardSkeleton />;
@@ -24,7 +31,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (viewer.sessionsCount === 0) {
+  if (kpis !== undefined && kpis.sessionsCount === 0) {
     return (
       <section className="space-y-6">
         <header>

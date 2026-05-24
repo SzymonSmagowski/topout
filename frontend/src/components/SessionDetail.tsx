@@ -21,16 +21,19 @@ export interface SessionDetailData {
   readonly date: number;
   readonly gymName: string;
   readonly perceivedEffort: number;
-  readonly durationMinutes: number | null;
-  readonly notes: string | null;
-  readonly summary: string | null;
+  // Convex's v.optional(...) round-trips as `number | undefined`; the
+  // design preview used `number | null`. Accept both so the same component
+  // serves real Convex data and the static preview without a coerce step.
+  readonly durationMinutes: number | null | undefined;
+  readonly notes: string | null | undefined;
+  readonly summary: string | null | undefined;
   readonly summaryStatus: 'pending' | 'ok' | 'err';
-  readonly summaryError: string | null;
+  readonly summaryError: string | null | undefined;
   readonly attempts: readonly {
     readonly grade: VGrade;
     readonly outcome: Outcome;
     readonly attemptCount: number;
-    readonly notes: string | null;
+    readonly notes?: string | null | undefined;
   }[];
 }
 

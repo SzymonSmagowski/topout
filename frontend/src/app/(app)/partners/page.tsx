@@ -90,10 +90,10 @@ export default function PartnersPage() {
               .slice(0, 2)
               .toUpperCase();
 
-            const isPending = pendingId === p._id;
+            const isPending = pendingId === p.userId;
 
             return (
-              <li key={p._id} className="flex items-center gap-3 px-5 py-4">
+              <li key={p.userId} className="flex items-center gap-3 px-5 py-4">
                 <span
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                   style={{
@@ -106,16 +106,16 @@ export default function PartnersPage() {
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2">
                     <Link
-                      href={`/partners/${p._id}`}
+                      href={`/partners/${p.userId}`}
                       className="text-sm font-medium hover:underline"
                     >
                       {p.displayName}
                     </Link>
                     {p.gradeRange && (
                       <span className="flex items-center gap-1 text-[0.6875rem] uppercase tracking-wider text-[color:var(--color-text-muted)]">
-                        <GradePill grade={p.gradeRange[0]} size="sm" />
+                        <GradePill grade={p.gradeRange.min} size="sm" />
                         <span>–</span>
-                        <GradePill grade={p.gradeRange[1]} size="sm" />
+                        <GradePill grade={p.gradeRange.max} size="sm" />
                       </span>
                     )}
                   </div>
@@ -130,7 +130,7 @@ export default function PartnersPage() {
                     type="button"
                     className="btn btn-secondary h-8 text-xs"
                     onClick={() =>
-                      setConfirmUnfollow({ userId: p._id, displayName: p.displayName })
+                      setConfirmUnfollow({ userId: p.userId, displayName: p.displayName })
                     }
                     disabled={isPending}
                   >
@@ -141,7 +141,7 @@ export default function PartnersPage() {
                   <button
                     type="button"
                     className="btn btn-primary h-8 text-xs"
-                    onClick={() => onFollow(p._id)}
+                    onClick={() => onFollow(p.userId)}
                     disabled={isPending}
                   >
                     <UserPlus className="h-3.5 w-3.5" aria-hidden />
