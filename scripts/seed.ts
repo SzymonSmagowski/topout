@@ -101,7 +101,15 @@ function parseArgs(argv: readonly string[]): CliArgs {
 
 function looksProd(deployment: string | undefined): boolean {
   if (deployment === undefined || deployment === '') return false;
-  if (deployment.startsWith('dev:') || deployment.startsWith('local:')) return false;
+  // `anonymous:` covers the Convex CLI's local-only backend started by
+  // `pnpm convex dev` without a login — it's strictly local, never prod.
+  if (
+    deployment.startsWith('dev:') ||
+    deployment.startsWith('local:') ||
+    deployment.startsWith('anonymous:')
+  ) {
+    return false;
+  }
   const allowlist = (process.env.ALLOWED_SEED_DEPLOYMENTS ?? '')
     .split(',')
     .map((s) => s.trim())

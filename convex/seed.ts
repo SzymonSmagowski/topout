@@ -29,8 +29,18 @@ import { typedError } from './lib/errors';
 // ---------------------------------------------------------------------------
 
 function isAllowedDeployment(name: string | undefined): boolean {
-  if (name === undefined || name === '') return false;
-  if (name.startsWith('dev:') || name.startsWith('local:')) return true;
+  // Convex CLI's anonymous local backend doesn't populate CONVEX_DEPLOYMENT
+  // inside the function runtime — `name` comes through as ''. The host IS
+  // strictly local in that mode, so empty-on-local is safe; real prod
+  // deployments always carry a populated name.
+  if (name === undefined || name === '') return true;
+  if (
+    name.startsWith('dev:') ||
+    name.startsWith('local:') ||
+    name.startsWith('anonymous:')
+  ) {
+    return true;
+  }
   const allowlist = (process.env.ALLOWED_SEED_DEPLOYMENTS ?? '')
     .split(',')
     .map((s) => s.trim())
