@@ -79,7 +79,6 @@ export function GymCombobox({ value, onChange }: GymComboboxProps) {
         }}
         onFocus={() => setOpen(true)}
         autoComplete="off"
-        required
       />
       {open && (matches.length > 0 || canCreate) && (
         <div

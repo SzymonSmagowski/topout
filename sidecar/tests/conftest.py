@@ -20,8 +20,8 @@ def _env_isolation(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # Bust any singleton cache so the env above takes effect.
     from src.core import settings as settings_module
 
-    settings_module._cached_settings = None  # type: ignore[attr-defined]
+    settings_module._cached_settings = None
 
     yield
 
-    settings_module._cached_settings = None  # type: ignore[attr-defined]
+    settings_module._cached_settings = None
