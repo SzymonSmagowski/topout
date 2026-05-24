@@ -20,11 +20,13 @@ and Convex Auth.
 | `attempts.ts` | BackendDev | Internal helpers for the summarize action (`bySessionInternal`). |
 | `dashboard.ts` | BackendDev | All 5 reactive queries powering the dashboard (`kpiStats`, `sendPyramid`, `weeklyVolume`, `gradeAttemptDist`, `sendRateTrend`). |
 | `follows.ts` | BackendDev | `follow`, `unfollow`, `listPartners`, `listFollowing`, `listFollowers`. |
-| `summarize.ts` | BackendDev | Internal `run` action + public `retrySummary` mutation. |
-| `reports.ts` | BackendDev | `generateReport` action (POSTs to sidecar), `listReports`, `getReport`. |
-| `seed.ts` | BackendDev | Internal mutations + the `run` action called by `scripts/seed.ts`. |
-| `llm/client.ts` | BackendDev | The OpenAI SDK lives here and nowhere else. |
-| `llm/prompts/*.ts` | BackendDev | Const prompt strings. |
+| `summarize.ts` | BackendDev | Public `retrySummary` mutation (default V8 runtime). |
+| `summarizeActions.ts` | BackendDev | Internal `run` action (`'use node';` — thin HTTP relay to the sidecar's `/summarize-session`). |
+| `reports.ts` | BackendDev | `listReports`, `getReport`, internal mutations / queries used by the action (default V8 runtime). |
+| `reportsActions.ts` | BackendDev | `generateReport` action (`'use node';` — HTTP relay to the sidecar's `/weekly-report`). |
+| `users.ts` | BackendDev | `viewer` (soft auth — returns null when unauthenticated), `getPublic` (display-only public profile). |
+| `seed.ts` | BackendDev | Internal mutations (default V8 runtime — `wipeSeedUsers`, `ensureGyms`, `createSeedUserMutation` via Convex Auth's `createAccount`, `insertFollow`, `assertNonProd`). |
+| `seedActions.ts` | BackendDev | Top-level `run` action (`'use node';`) called by `scripts/seed.ts`. Contains the deterministic PRNG and the 84-day arc generator. |
 | `_generated/` | Convex | Generated. Gitignored. |
 
 ## Conventions
@@ -58,3 +60,43 @@ After editing `schema.ts`, run `pnpm convex:dev` (or keep `./dev.sh` running).
 Convex regenerates `_generated/dataModel.d.ts` which exports the branded
 `Id<'table'>` types and the `Doc<'table'>` document types. Import them
 everywhere — never use bare `string` for an entity ID.
+
+## First-boot bootstrap (one-time)
+
+The `_generated/` directory is gitignored. On a fresh clone:
+
+```bash
+cd apps/topout/frontend
+pnpm install
+pnpm exec convex dev          # interactive — login + provision deployment
+# Once the first sync prints "Convex functions ready", Ctrl-C is fine.
+```
+
+This step populates `apps/topout/convex/_generated/` with the typed `api`,
+`internal`, and `DataModel` modules. **`pnpm typecheck` will fail until this
+step runs** because every file under `convex/` imports from
+`./_generated/...`. Same applies to `scripts/seed.ts`.
+
+## Why are `summarize.ts` + `summarizeActions.ts` split (and likewise for `reports.ts` / `seed.ts`)?
+
+Convex's `"use node";` directive forces a file into the Node runtime, but
+that runtime cannot host queries or mutations. Anything that calls `fetch`
+against an external HTTP service (the sidecar) or uses other Node-only
+APIs must live in a `"use node";` file containing ONLY actions. The split
+is mechanical, not semantic — the `Actions.ts` variant is the Node-runtime
+sibling of the regular file.
+
+After the LLM-gateway consolidation neither `summarizeActions.ts` nor
+`reportsActions.ts` imports the OpenAI SDK — both are pure HTTP relays to
+the sidecar. The `'use node';` directive is still required because Convex
+treats outbound `fetch` calls as Node-only, but the surface area inside
+each Node module is now tiny.
+
+## Directive placement
+
+`'use node';` MUST be the literal first line of the file (after no
+whitespace, no comments, no docblock). Convex's module scanner looks for
+the directive in token position 1; anything above it — even a JSDoc
+docblock — disables Node-runtime hoisting and the action silently runs in
+the V8 runtime where `fetch` against external hosts is blocked. The
+docblock goes immediately AFTER the directive.

@@ -1,12 +1,19 @@
 # topout / sidecar
 
-Python FastAPI + LangGraph service that powers the **weekly coaching report**
-feature. Owns the heavyweight analytics work that doesn't belong in a Convex
-action:
+Python FastAPI + LangGraph service. **The single LLM gateway** for the whole
+TopOut stack — both the per-session summary and the weekly report relay
+through here. Convex never imports the OpenAI SDK.
 
-- pandas time-series aggregation over a week's sessions/attempts
-- 3-node LangGraph pipeline (`load_payload` → `analyze_stats` → `synthesize_narrative`)
-- OpenAI `gpt-5.4-nano` for the markdown narrative
+Two LangGraph flows:
+
+- **`/summarize-session`** — 1–2 sentence coach blurb per logged session.
+  3 nodes: `load_payload` → `format_prompt` → `synthesize`.
+- **`/weekly-report`** — 200–400 word markdown narrative + numeric stats.
+  3 nodes: `load_payload` → `analyze_stats` (pandas) → `synthesize_narrative`.
+
+Both use `langchain_openai.ChatOpenAI` under the hood and attach the
+Langfuse `CallbackHandler` to every invocation, so each graph node + each
+LLM call shows up as a child observation in the Langfuse UI.
 
 The sidecar is **strictly one-directional**: Convex POSTs the entire payload
 in, the sidecar returns a JSON response. **There is no Convex client here.**
@@ -48,6 +55,51 @@ Public — no auth. Used by the frontend's `SidecarHealthBanner` on `/reports`.
 { "status": "ok", "model": "gpt-5.4-nano" }
 ```
 
+### `POST /summarize-session`
+
+Bearer-auth. Returns a 1–2 sentence coaching blurb for one logged session.
+
+**Request** — see `src/schemas.py::SummarizeSessionRequest`:
+
+```jsonc
+{
+  "session_id": "abc123",          // for Langfuse trace grouping
+  "user_id":    "u_xyz",           // for Langfuse user filter
+  "session": {
+    "date": 1734220800000,
+    "perceived_effort": 7,
+    "duration_minutes": 95,
+    "notes": null
+  },
+  "attempts": [
+    { "grade": "V4", "outcome": "send",    "attempt_count": 2, "notes": null },
+    { "grade": "V5", "outcome": "project", "attempt_count": 6, "notes": "close" }
+  ],
+  "baseline": {
+    "window_days": 30,
+    "sessions_count": 12,
+    "send_rate": 0.32,
+    "top_grade": "V5",
+    "total_attempts": 180
+  },
+  "max_output_chars": 240
+}
+```
+
+**Response (200):**
+
+```jsonc
+{
+  "text": "Solid V4 send and a real go at V5 — keep that volume.",
+  "usage": {
+    "input_tokens": 412,
+    "output_tokens": 28,
+    "model": "gpt-5.4-nano",
+    "duration_ms": 1830
+  }
+}
+```
+
 ### `POST /weekly-report`
 
 Bearer-auth: `Authorization: Bearer ${SIDECAR_SECRET}` (same value the
@@ -84,12 +136,37 @@ The single source of truth for the wire shape is the Pydantic model.
 
 ## LangGraph topology
 
+Two graphs, both strict-typed Pydantic state, no `dict[str, Any]` between
+nodes.
+
 ```
-START → load_payload → analyze_stats → synthesize_narrative → END
+weekly-report:
+  START → load_payload → analyze_stats → synthesize_narrative → END
+
+summarize-session:
+  START → load_payload → format_prompt → synthesize → END
 ```
 
-Single typed Pydantic `WeeklyReportState`. No `dict[str, Any]` in the graph.
-See `apps/topout/diagrams/weekly-report-graph.drawio` for the visual.
+See `apps/topout/diagrams/llm-flows.drawio` for the visual.
+
+## Observability — Langfuse
+
+The sidecar wires `langfuse.langchain.CallbackHandler` into every LLM call.
+Each graph node also shows up as a Langfuse observation because LangGraph
+runs nodes through the same LangChain runnable plumbing. Each request is
+wrapped in `propagate_attributes(user_id, session_id, tags)` so the trace
+groups correctly in the Langfuse UI.
+
+Env vars (all optional — empty = tracing disabled, sidecar still runs):
+
+| Variable | Local dev | Prod |
+|---|---|---|
+| `LANGFUSE_HOST` | `http://langfuse-web:3000` | per-app Langfuse subdomain |
+| `LANGFUSE_PUBLIC_KEY` | grab from local UI | `provision-langfuse-org.sh` |
+| `LANGFUSE_SECRET_KEY` | grab from local UI | `provision-langfuse-org.sh` |
+| `LANGFUSE_ENVIRONMENT` | `development` | `production` |
+
+See `project_langfuse_per_app_isolation` for the cloud provisioning flow.
 
 ## Conventions
 
@@ -115,20 +192,25 @@ sidecar/
 ├── README.md                    # this file
 ├── .env.example                 # committed; .env is gitignored
 └── src/
-    ├── main.py                  # FastAPI app factory
-    ├── auth.py                  # bearer_auth dependency
-    ├── schemas.py               # Pydantic v2 request/response models
+    ├── main.py                          # FastAPI app factory
+    ├── auth.py                          # bearer_auth dependency
+    ├── schemas.py                       # Pydantic v2 request/response models
     ├── routes/
-    │   ├── health.py            # GET /health
-    │   └── weekly_report.py     # POST /weekly-report
+    │   ├── health.py                    # GET  /health
+    │   ├── summarize_session.py         # POST /summarize-session
+    │   └── weekly_report.py             # POST /weekly-report
     ├── graph/
-    │   ├── weekly_report.py     # StateGraph build + GRAPH module-level
-    │   ├── state.py             # WeeklyReportState
-    │   └── nodes.py             # load_payload, analyze_stats, synthesize_narrative
+    │   ├── state.py                     # WeeklyReportState (typed Pydantic)
+    │   ├── nodes.py                     # weekly-report nodes
+    │   ├── weekly_report.py             # weekly-report StateGraph
+    │   └── summarize_session.py         # summarize-session State + StateGraph
     ├── llm/
-    │   ├── client.py
+    │   ├── client.py                    # ChatOpenAI gateway; one function per call type
     │   └── prompts/
-    │       └── weekly_report.py
+    │       ├── weekly_report.py
+    │       └── summarize_session.py
+    ├── observability/
+    │   └── langfuse.py                  # singleton client + CallbackHandler (or None)
     └── core/
         ├── settings.py
         └── logger.py

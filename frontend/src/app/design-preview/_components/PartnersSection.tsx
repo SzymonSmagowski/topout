@@ -1,10 +1,11 @@
 import { Activity, ArrowRight, Lock, UserCheck, UserPlus } from 'lucide-react';
 
+import { GradePill } from '@/components/GradePill';
+import { SummaryBanner } from '@/components/SummaryBanner';
+
 import { ALL_USERS, gymName, SAM_SESSIONS, USER_ALEX, USER_ME, USER_SAM, type MockUser } from '../_data/mock';
 import { Dashboard } from './Dashboard';
-import { GradePill } from './GradePill';
 import { SectionHeader } from './SectionHeader';
-import { SummaryBanner } from './SummaryBanner';
 
 interface Row {
   readonly user: MockUser;

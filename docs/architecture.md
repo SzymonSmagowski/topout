@@ -117,22 +117,28 @@ apps/topout/
 │       ├── schemas.py               # Pydantic v2 request/response models
 │       ├── routes/
 │       │   ├── __init__.py
-│       │   ├── health.py            # GET /health
+│       │   ├── health.py            # GET  /health
+│       │   ├── summarize_session.py # POST /summarize-session
 │       │   └── weekly_report.py     # POST /weekly-report
 │       ├── graph/
 │       │   ├── __init__.py
-│       │   ├── weekly_report.py     # the 3-node StateGraph
-│       │   ├── state.py             # WeeklyReportState pydantic model
-│       │   └── nodes.py             # load_payload, analyze_stats, synthesize_narrative
+│       │   ├── state.py             # WeeklyReportState (typed Pydantic)
+│       │   ├── nodes.py             # weekly-report nodes
+│       │   ├── weekly_report.py     # weekly-report StateGraph
+│       │   └── summarize_session.py # summarize-session State + StateGraph
 │       ├── llm/
 │       │   ├── __init__.py
-│       │   ├── client.py            # mirror of convex/llm/client.ts (Python side)
+│       │   ├── client.py            # ChatOpenAI gateway — single LLM SDK import
 │       │   └── prompts/
 │       │       ├── __init__.py
-│       │       └── weekly_report.py # const SYSTEM_PROMPT
+│       │       ├── weekly_report.py
+│       │       └── summarize_session.py
+│       ├── observability/
+│       │   ├── __init__.py
+│       │   └── langfuse.py          # singleton Langfuse client + CallbackHandler
 │       └── core/
 │           ├── __init__.py
-│           ├── settings.py          # pydantic-settings — SIDECAR_SECRET, OPENAI_*, PORT
+│           ├── settings.py          # pydantic-settings — SIDECAR_SECRET, OPENAI_*, LANGFUSE_*, PORT
 │           └── logger.py
 │
 ├── scripts/
@@ -141,7 +147,7 @@ apps/topout/
 └── diagrams/
     ├── convex-schema-erd.drawio     # data model — Architect
     ├── service-topology.drawio      # system context — Architect
-    └── weekly-report-graph.drawio   # LangGraph topology — Architect
+    └── llm-flows.drawio             # both LangGraph topologies — Architect
 ```
 
 ---
@@ -203,52 +209,32 @@ where `ErrorKind` is the `as const` union in `convex/lib/enums.ts`.
 
 > The brief: "the Gemini/Vertex AI swap before the interview is a 10-line change".
 
-### 4.1 TypeScript side — `convex/llm/client.ts`
+**Architectural decision (locked):** the sidecar is the single LLM gateway
+for the entire stack. Convex never imports the OpenAI SDK; both summarize
+and weekly-report relay HTTP through the sidecar. One swap surface, one
+observability surface (Langfuse), one place to add caching or retry.
 
-```ts
-// convex/llm/client.ts — signatures only.
-// All OpenAI SDK imports happen in THIS FILE ONLY. Nowhere else.
+### 4.1 Convex side — no LLM imports
 
-export interface LlmUsage {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly model: string;
-  readonly durationMs: number;
-}
-
-export interface LlmResult {
-  readonly text: string;
-  readonly usage: LlmUsage;
-}
-
-/**
- * One function per call type so each prompt's I/O is named at the call site.
- * Today: just `summarizeSession`. Future calls (e.g. multimodal beta) get a
- * second function here; they don't add a second SDK import elsewhere.
- *
- * Reads OPENAI_API_KEY and OPENAI_MODEL from Convex env vars (configured via
- * `npx convex env set`). The `model` env var defaults to 'gpt-5.4-nano' if
- * unset — matches the manifest.
- */
-export async function summarizeSession(input: {
-  readonly systemPrompt: string;
-  readonly payload: unknown;     // JSON-serializable; the action builds it
-  readonly maxOutputChars: number;
-}): Promise<LlmResult>;
-```
-
-To swap to Vertex AI: replace the body of `summarizeSession` with a
-`@google-cloud/vertexai` call. Public types stay identical; no caller
-changes.
+The `convex/llm/` directory does not exist. Both
+`convex/summarizeActions.ts` and `convex/reportsActions.ts` are thin HTTP
+relays to the sidecar with identical patterns: 30 s timeout, one retry on
+5xx, no retry on 4xx, idempotent guards on the patch path, error kinds
+from `convex/lib/enums.ts::ERROR_KINDS` (`sidecar_unreachable`,
+`sidecar_bad_response`, `sidecar_unauthorized`).
 
 ### 4.2 Python side — `sidecar/src/llm/client.py`
 
-Mirrors the TS shape:
+The single LLM SDK import. Uses `langchain_openai.ChatOpenAI` (not raw
+`openai`) so the Langfuse `CallbackHandler` attaches via
+`config={"callbacks": [...]}` and captures token usage + latency
+per-invocation without per-call boilerplate.
 
 ```python
 # sidecar/src/llm/client.py — signatures only.
 
 from dataclasses import dataclass
+from typing import Literal
 
 @dataclass(frozen=True)
 class LlmUsage:
@@ -258,18 +244,64 @@ class LlmUsage:
     duration_ms: int
 
 @dataclass(frozen=True)
-class LlmResult:
+class LlmOk:
+    kind: Literal["ok"]
     text: str
     usage: LlmUsage
 
-async def synthesize_weekly_narrative(
+@dataclass(frozen=True)
+class LlmErr:
+    kind: Literal["err"]
+    error: str
+
+LlmResult = LlmOk | LlmErr
+
+def synthesize_weekly_narrative(
     system_prompt: str,
-    user_payload: dict,             # serialized stats blob
-    max_output_chars: int = 4000,
+    user_payload: dict,
+    max_output_chars: int,
+    callbacks: list | None = None,
+) -> LlmResult: ...
+
+def summarize_session(
+    system_prompt: str,
+    payload: dict,
+    max_output_chars: int,
+    callbacks: list | None = None,
 ) -> LlmResult: ...
 ```
 
-Same env vars: `OPENAI_API_KEY`, `OPENAI_MODEL`. Same swap pattern.
+Env vars: `OPENAI_API_KEY`, `OPENAI_MODEL`. To swap to Gemini / Vertex,
+replace the `ChatOpenAI` instantiation in `_build_chat()` with the
+equivalent LangChain Vertex chat model. Callers unchanged.
+
+### 4.3 Observability — Langfuse
+
+Every LLM call and every LangGraph node transition is captured by the
+Langfuse `CallbackHandler`. The wiring is centralised in
+`sidecar/src/observability/langfuse.py`:
+
+- `get_langfuse_client()` — singleton `Langfuse` instance, or `None` when
+  keys are unset.
+- `get_callback_handler()` — singleton LangChain handler attached at the
+  graph invocation site, or `None` when tracing is disabled.
+
+The routes wrap the graph invocation in
+`propagate_attributes(user_id=..., session_id=..., tags=[environment])` so
+the trace groups correctly in the UI:
+
+| Route | `user_id` | `session_id` |
+|---|---|---|
+| `POST /summarize-session` | `req.user_id` | `req.session_id` |
+| `POST /weekly-report`     | `req.user.user_id` | `f"weekly-{week_start}"` |
+
+Missing `LANGFUSE_PUBLIC_KEY` or `LANGFUSE_SECRET_KEY` is treated as
+"tracing disabled" — the sidecar runs unchanged. This is what keeps local
+dev / CI working without any Langfuse setup.
+
+Env vars: `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
+`LANGFUSE_ENVIRONMENT`. See the `project_langfuse_per_app_isolation`
+memory for the cloud provisioning flow.
 
 ---
 
@@ -491,13 +523,65 @@ export const createSession = mutation({
 
 ## 6. Python sidecar HTTP contract
 
+Two LLM endpoints (`/summarize-session`, `/weekly-report`) plus the public
+health probe. Convex relays through both — there is no direct OpenAI call
+on the Convex side.
+
 ### 6.1 `GET /health`
 
 - **Auth:** none (the frontend pings this without a token to detect "sidecar offline" — see `SidecarHealthBanner`).
 - **Response (200):** `{ "status": "ok", "model": "gpt-5.4-nano" }`
 - **Pydantic model:** `HealthResponse`.
 
-### 6.2 `POST /weekly-report`
+### 6.2 `POST /summarize-session`
+
+- **Auth:** `Authorization: Bearer ${SIDECAR_SECRET}`.
+- **Content-Type:** `application/json`.
+- **Caller:** `convex/summarizeActions.ts::run` (Node-runtime internal action).
+- **Request — `SummarizeSessionRequest`** (see `sidecar/src/schemas.py`):
+  ```python
+  class SummarizeSessionInPayload(BaseModel):
+      date: int                              # epoch ms
+      perceived_effort: int = Field(ge=1, le=10)
+      duration_minutes: int | None = None
+      notes: str | None = None
+
+  class SummarizeAttemptInPayload(BaseModel):
+      grade: VGradeLiteral
+      outcome: OutcomeLiteral
+      attempt_count: int = Field(ge=1)
+      notes: str | None = None
+
+  class SummarizeBaselineInPayload(BaseModel):
+      window_days: int
+      sessions_count: int
+      send_rate: float
+      top_grade: VGradeLiteral | None
+      total_attempts: int
+
+  class SummarizeSessionRequest(BaseModel):
+      session_id: str                        # opaque — for Langfuse only
+      user_id: str                           # opaque — for Langfuse only
+      session: SummarizeSessionInPayload
+      attempts: list[SummarizeAttemptInPayload]
+      baseline: SummarizeBaselineInPayload
+      max_output_chars: int = 240
+  ```
+- **Response (200) — `SummarizeSessionResponse`:**
+  ```python
+  class LlmUsage(BaseModel):
+      input_tokens: int
+      output_tokens: int
+      model: str
+      duration_ms: int
+
+  class SummarizeSessionResponse(BaseModel):
+      text: str
+      usage: LlmUsage
+  ```
+- **Errors:** same shape as `/weekly-report` — `{ "error": "<message>" }`.
+
+### 6.3 `POST /weekly-report`
 
 - **Auth:** `Authorization: Bearer ${SIDECAR_SECRET}` — rejected with 401 + `{ "error": "unauthorized" }` if missing/wrong.
 - **Content-Type:** `application/json`.
@@ -566,7 +650,7 @@ export const createSession = mutation({
 mirror of these shapes inline. The contract test in BackendTester sends a
 golden TS payload to the sidecar and asserts the response shape.
 
-### 6.3 LangGraph topology — `sidecar/src/graph/weekly_report.py`
+### 6.4 LangGraph topology — `sidecar/src/graph/weekly_report.py`
 
 ```python
 # Conceptual outline (BackendDeveloper writes the bodies).

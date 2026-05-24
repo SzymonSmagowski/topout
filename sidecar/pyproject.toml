@@ -18,6 +18,11 @@ langchain = "^1.2.15"
 langchain-core = "^1.3.0"
 langchain-openai = "^1.1.14"
 langgraph = "^1.1.8"
+openai = "^2.26.0"
+
+# Observability — single source of truth for LLM traces (graph nodes + LLM calls).
+# Graceful no-op when keys are unset, so local dev / CI keep running without it.
+langfuse = "^3.0"
 
 # Analytics
 pandas = "^2.2.3"
@@ -61,6 +66,9 @@ select = [
 ]
 ignore = [
     "ANN401",   # Allow `Any` in narrow cases (LangGraph state dict patches).
+    "RUF001",   # Ambiguous unicode chars in strings (en/em dash) are intentional.
+    "RUF002",   # Same, for docstrings.
+    "B008",     # FastAPI dependency injection uses `= Depends(...)` by design.
 ]
 
 [tool.black]
@@ -78,7 +86,7 @@ no_implicit_optional = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "langgraph.*", "langchain.*"]
+module = ["pandas.*", "langgraph.*", "langchain.*", "langchain_openai.*", "openai.*", "langfuse.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

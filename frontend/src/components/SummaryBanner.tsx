@@ -1,18 +1,43 @@
+'use client';
+
 import { AlertTriangle, RefreshCw, Sparkles } from 'lucide-react';
 
-import type { SummaryState } from '../_data/mock';
+/**
+ * Discriminated state for the per-session AI coach summary. Mirrors the
+ * `summaryStatus` literal-union on the `sessions` table:
+ *   pending → action scheduled but not finished
+ *   ok      → LLM produced text; show it
+ *   err     → LLM/network failure; show retry
+ */
+export type SummaryState =
+  | { readonly kind: 'pending' }
+  | { readonly kind: 'ok'; readonly text: string }
+  | { readonly kind: 'err'; readonly message: string };
+
+/** Convert the row's status + summary fields into a SummaryState. */
+export function summaryStateFrom(row: {
+  readonly summary: string | null;
+  readonly summaryStatus: 'pending' | 'ok' | 'err';
+  readonly summaryError: string | null;
+}): SummaryState {
+  switch (row.summaryStatus) {
+    case 'pending':
+      return { kind: 'pending' };
+    case 'ok':
+      return { kind: 'ok', text: row.summary ?? '' };
+    case 'err':
+      return { kind: 'err', message: row.summaryError ?? 'Summary generation failed.' };
+  }
+}
 
 interface SummaryBannerProps {
   readonly state: SummaryState;
   readonly compact?: boolean;
+  readonly onRetry?: () => void;
+  readonly retrying?: boolean;
 }
 
-/**
- * The discriminated-union state from `summarize-session` rendered three ways.
- * Pending = shimmering skeleton. Ok = coach blurb in an accent-tinted card.
- * Err = error card with retry button.
- */
-export function SummaryBanner({ state, compact = false }: SummaryBannerProps) {
+export function SummaryBanner({ state, compact = false, onRetry, retrying }: SummaryBannerProps) {
   if (state.kind === 'pending') {
     return (
       <div
@@ -51,10 +76,17 @@ export function SummaryBanner({ state, compact = false }: SummaryBannerProps) {
           <div className="text-sm font-medium text-[color:var(--color-text)]">Couldn’t generate summary</div>
           <div className="mt-0.5 text-xs text-[color:var(--color-text-muted)]">{state.message}</div>
         </div>
-        <button type="button" className="btn btn-secondary h-8 text-xs">
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-          Retry
-        </button>
+        {onRetry && (
+          <button
+            type="button"
+            className="btn btn-secondary h-8 text-xs"
+            onClick={onRetry}
+            disabled={retrying}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${retrying ? 'animate-spin' : ''}`} aria-hidden />
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        )}
       </div>
     );
   }

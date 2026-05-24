@@ -27,20 +27,25 @@ Either service exiting tears all three down. Prereqs documented in `README.md`.
 ## Architecture at a glance
 
 **Convex** owns auth, the database, every reactive query, and orchestration
-for the per-session AI summary. The session log form calls `createSession`
-which writes session + attempts and schedules `internal.summarize.run`. The
-dashboard / partner views read from `convex/dashboard.ts` queries that take
-a `userId` and pass through `requireFollowing` for authorization.
+for the per-session AI summary + weekly report. The session log form calls
+`createSession` which writes session + attempts and schedules
+`internal.summarizeActions.run`; the reports page calls
+`reportsActions.generateReport`. Both actions are thin HTTP relays — they
+hold no LLM SDK. Dashboard / partner views read from `convex/dashboard.ts`
+queries that take a `userId` and pass through `requireFollowing` for
+authorization.
 
-**Python sidecar** is invoked sync-over-HTTP by exactly one Convex action
-(`generateReport`). The sidecar holds no Convex client — data flows in via
-the POST payload. The 3-node LangGraph topology runs `load_payload` →
-`analyze_stats` (pandas) → `synthesize_narrative` (OpenAI). Bearer-auth via
-shared `SIDECAR_SECRET`.
+**Python sidecar** is the single LLM gateway. Two LangGraph flows:
+`/summarize-session` (3 nodes — load → format → synthesize) and
+`/weekly-report` (3 nodes — load → analyze → synthesize). Bearer-auth via
+shared `SIDECAR_SECRET`. The sidecar holds no Convex client — data flows in
+via POST. Every graph node and every LLM call is captured by the Langfuse
+`CallbackHandler`, attached via `config={"callbacks": [...]}` on the
+underlying `ChatOpenAI` invocation.
 
-**LLM** isolated to `convex/llm/client.ts` and `sidecar/src/llm/client.py`.
-Each exposes one function per call type. Vertex AI swap is a one-file change
-on either side.
+**LLM** lives in `sidecar/src/llm/client.py` and nowhere else. One function
+per call type (`summarize_session`, `synthesize_weekly_narrative`). Swap
+the model in this one file — both Convex actions keep working unchanged.
 
 ## Important invariants
 
@@ -57,6 +62,12 @@ high-impact ones:
   exists. All `Id<…>` types come from the generated file.
 - **Secrets never live in committed files.** `.env.local.example` /
   `.env.example` exist; their non-`.example` siblings are gitignored.
+- **No OpenAI SDK in Convex.** All LLM calls relay to the sidecar via HTTP.
+  The `convex/llm/` directory does not exist; if you find yourself wanting
+  to add an OpenAI import to a Convex action, add a sidecar route instead.
+- **Langfuse traces every LLM call.** Both sidecar routes wrap the graph
+  invocation in `propagate_attributes(user_id, session_id, tags)` so traces
+  group correctly. Missing keys = graceful no-op (CI / local dev still run).
 
 ## Related
 

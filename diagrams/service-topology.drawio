@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="claude-code" version="24.7.17">
   <diagram name="service-topology" id="service-topology">
-    <mxGraphModel dx="1800" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1900" pageHeight="1300" math="0" shadow="0">
+    <mxGraphModel dx="1800" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1900" pageHeight="1400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -11,7 +11,7 @@
         <mxCell id="title" value="TopOut — Service Topology (System Context)" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1200" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Browser → Next.js (Vercel) → Convex Cloud → OpenAI. Python sidecar branched off Convex actions via bearer-auth POST. Sidecar holds NO Convex client — data flows IN only." style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontFamily=Helvetica;fontColor=#525252;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Browser -&gt; Next.js (Vercel) -&gt; Convex Cloud -&gt; Sidecar -&gt; OpenAI. Sidecar is the single LLM gateway. Every LLM call traced to Langfuse." style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontFamily=Helvetica;fontColor=#525252;" vertex="1" parent="1">
           <mxGeometry x="40" y="50" width="1700" height="20" as="geometry" />
         </mxCell>
 
@@ -19,10 +19,9 @@
         <!-- LAYOUT PLAN                                                    -->
         <!--   Row 1 (y=180-300):  Browser     Next.js     OpenAI           -->
         <!--   Row 2 (y=440-600):              Convex                       -->
-        <!--   Row 3 (y=760-960):              Sidecar                      -->
+        <!--   Row 3 (y=760-960):              Sidecar     Langfuse         -->
         <!-- Vertical gutters >= 140px so labels + bg masks fit cleanly.    -->
         <!-- Health-ping routes through the far-left margin (x=40).         -->
-        <!-- Sidecar→OpenAI routes through the far-right margin (x=1780).   -->
         <!-- ============================================================== -->
 
         <!-- ============================================================== -->
@@ -64,47 +63,54 @@
           </mxGeometry>
         </mxCell>
 
-        <!-- 4. Convex -> OpenAI (per-session summary) - up via far-right of Convex, vertical to OpenAI bottom -->
-        <mxCell id="e-convex-openai" style="endArrow=classic;html=1;rounded=0;strokeColor=#2E7D32;strokeWidth=2;exitX=1;exitY=0.2;entryX=0.5;entryY=1;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-convex" target="b-openai">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1320" y="472" />
-              <mxPoint x="1320" y="340" />
-            </Array>
-          </mxGeometry>
+        <!-- 4. Convex -> Sidecar  (POST /summarize-session) -->
+        <!--    Left half of Convex bottom edge -> left half of Sidecar top edge. -->
+        <mxCell id="e-convex-sum" style="endArrow=classic;html=1;rounded=0;strokeColor=#A0522D;strokeWidth=3;exitX=0.35;exitY=1;entryX=0.35;entryY=0;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-convex" target="b-sidecar">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-convex-openai-l" value="convex/llm/client.ts — summarizeSession()&#xa;OPENAI_API_KEY, model gpt-5.4-nano" style="edgeLabel;html=1;align=left;fontSize=11;fontFamily=Helvetica;fontColor=#2E7D32;labelBackgroundColor=#FAF7F0;spacingLeft=4;" vertex="1" connectable="0" parent="e-convex-openai">
+        <mxCell id="e-convex-sum-l" value="POST /summarize-session&#xa;Bearer ${SIDECAR_SECRET}" style="edgeLabel;html=1;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=#A0522D;fontStyle=1;labelBackgroundColor=#FAF7F0;spacingLeft=4;" vertex="1" connectable="0" parent="e-convex-sum">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="-260" y="-30" as="offset" />
+            <mxPoint x="-220" y="-30" as="offset" />
           </mxGeometry>
         </mxCell>
 
-        <!-- 5. Convex -> Sidecar (POST weekly-report) - vertical down, label lifted to clear boundary line -->
-        <mxCell id="e-convex-sidecar" style="endArrow=classic;html=1;rounded=0;strokeColor=#A0522D;strokeWidth=3;exitX=0.5;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-convex" target="b-sidecar">
+        <!-- 5. Convex -> Sidecar  (POST /weekly-report) -->
+        <!--    Right half of Convex bottom edge -> right half of Sidecar top edge. -->
+        <mxCell id="e-convex-weekly" style="endArrow=classic;html=1;rounded=0;strokeColor=#A0522D;strokeWidth=3;exitX=0.65;exitY=1;entryX=0.65;entryY=0;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-convex" target="b-sidecar">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-convex-sidecar-l" value="POST /weekly-report&#xa;Authorization: Bearer ${SIDECAR_SECRET}&#xa;Content-Type: application/json" style="edgeLabel;html=1;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=#A0522D;fontStyle=1;labelBackgroundColor=#FAF7F0;spacingLeft=4;" vertex="1" connectable="0" parent="e-convex-sidecar">
+        <mxCell id="e-convex-weekly-l" value="POST /weekly-report&#xa;Bearer ${SIDECAR_SECRET}" style="edgeLabel;html=1;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=#A0522D;fontStyle=1;labelBackgroundColor=#FAF7F0;spacingLeft=4;" vertex="1" connectable="0" parent="e-convex-weekly">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="230" y="-35" as="offset" />
+            <mxPoint x="220" y="30" as="offset" />
           </mxGeometry>
         </mxCell>
 
         <!-- 6. Sidecar -> OpenAI (LLM call) - exits right, up the far-right gutter, into OpenAI right edge -->
-        <mxCell id="e-sidecar-openai" style="endArrow=classic;html=1;rounded=0;strokeColor=#2E7D32;strokeWidth=2;exitX=1;exitY=0.5;entryX=1;entryY=0.85;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-sidecar" target="b-openai">
+        <mxCell id="e-sidecar-openai" style="endArrow=classic;html=1;rounded=0;strokeColor=#2E7D32;strokeWidth=2;exitX=1;exitY=0.35;entryX=1;entryY=0.85;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-sidecar" target="b-openai">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1780" y="860" />
-              <mxPoint x="1780" y="282" />
+              <mxPoint x="1820" y="830" />
+              <mxPoint x="1820" y="282" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-sidecar-openai-l" value="sidecar/src/llm/client.py&#xa;synthesize_weekly_narrative()" style="edgeLabel;html=1;align=left;fontSize=11;fontFamily=Helvetica;fontColor=#2E7D32;labelBackgroundColor=#FAF7F0;spacingLeft=4;" vertex="1" connectable="0" parent="e-sidecar-openai">
+        <mxCell id="e-sidecar-openai-l" value="ChatOpenAI.invoke()&#xa;gpt-5.4-nano" style="edgeLabel;html=1;align=left;fontSize=11;fontFamily=Helvetica;fontColor=#2E7D32;labelBackgroundColor=#FAF7F0;spacingLeft=4;" vertex="1" connectable="0" parent="e-sidecar-openai">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="-120" y="-260" as="offset" />
           </mxGeometry>
         </mxCell>
 
-        <!-- 7. Browser -> Sidecar (health ping) - down the LEFT margin (x=40), then right to sidecar -->
+        <!-- 7. Sidecar -> Langfuse (trace export). Short horizontal arrow into Langfuse box. -->
+        <mxCell id="e-sidecar-langfuse" style="endArrow=classic;html=1;rounded=0;strokeColor=#6A1B9A;strokeWidth=2;dashed=1;exitX=1;exitY=0.7;entryX=0;entryY=0.5;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-sidecar" target="b-langfuse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-sidecar-langfuse-l" value="OTel spans&#xa;trace_id / user_id / session_id" style="edgeLabel;html=1;align=center;fontSize=11;fontFamily=Helvetica;fontColor=#6A1B9A;labelBackgroundColor=#FAF7F0;" vertex="1" connectable="0" parent="e-sidecar-langfuse">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="-22" as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 8. Browser -> Sidecar (health ping) - down the LEFT margin (x=40), then right to sidecar -->
         <mxCell id="e-browser-sidecar" style="endArrow=classic;html=1;rounded=0;strokeColor=#777;strokeWidth=1;dashed=1;exitX=0;exitY=1;entryX=0;entryY=0.6;edgeStyle=orthogonalEdgeStyle;labelBackgroundColor=#FAF7F0;" edge="1" parent="1" source="b-browser" target="b-sidecar">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
@@ -139,29 +145,34 @@
         </mxCell>
 
         <!-- Convex (middle) - centered under Next.js -->
-        <mxCell id="b-convex" value="Convex Cloud&#xa;&#xa;schema.ts • queries • mutations • actions&#xa;scheduler • Convex Auth Password&#xa;OPENAI_API_KEY, SIDECAR_SECRET, PYTHON_SIDECAR_URL&#xa;(via npx convex env set)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#C66A24;fontSize=14;fontFamily=Helvetica;fontStyle=1;align=center;verticalAlign=middle;strokeWidth=3;" vertex="1" parent="1">
+        <mxCell id="b-convex" value="Convex Cloud&#xa;&#xa;schema.ts • queries • mutations • actions&#xa;scheduler • Convex Auth Password&#xa;summarizeActions + reportsActions = thin HTTP relays&#xa;SIDECAR_SECRET, PYTHON_SIDECAR_URL (npx convex env set)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#C66A24;fontSize=14;fontFamily=Helvetica;fontStyle=1;align=center;verticalAlign=middle;strokeWidth=3;" vertex="1" parent="1">
           <mxGeometry x="500" y="440" width="520" height="160" as="geometry" />
         </mxCell>
 
         <!-- Sidecar (bottom-middle) - centered under Convex -->
-        <mxCell id="b-sidecar" value="Python Sidecar (local, v1)&#xa;&#xa;FastAPI + LangGraph + pandas&#xa;POST /weekly-report   GET /health&#xa;3-node graph: load → analyze → synthesize&#xa;Bearer SIDECAR_SECRET" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#A0522D;fontSize=14;fontFamily=Helvetica;fontStyle=1;align=center;verticalAlign=middle;strokeWidth=3;" vertex="1" parent="1">
+        <mxCell id="b-sidecar" value="Python Sidecar — single LLM gateway&#xa;&#xa;FastAPI + LangGraph + langchain-openai + pandas&#xa;POST /summarize-session   POST /weekly-report   GET /health&#xa;3-node graphs each — Pydantic typed state&#xa;Bearer SIDECAR_SECRET" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#A0522D;fontSize=14;fontFamily=Helvetica;fontStyle=1;align=center;verticalAlign=middle;strokeWidth=3;" vertex="1" parent="1">
           <mxGeometry x="540" y="760" width="440" height="200" as="geometry" />
         </mxCell>
 
-        <!-- Bearer-auth boundary line - horizontal, sits in the gutter between Convex (y=600) and Sidecar (y=760), positioned at y=720 to clear the convex→sidecar label which is lifted to ~y=645. -->
+        <!-- Langfuse (bottom-right) -->
+        <mxCell id="b-langfuse" value="Langfuse&#xa;&#xa;LLM observability&#xa;traces every graph node + LLM call&#xa;public/secret key + host (env)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#6A1B9A;fontSize=14;fontFamily=Helvetica;fontStyle=1;align=center;verticalAlign=middle;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="800" width="280" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- Bearer-auth boundary line - horizontal, sits in the gutter between Convex (y=600) and Sidecar (y=760). -->
         <mxCell id="boundary-line" style="endArrow=none;html=1;rounded=0;strokeColor=#A0522D;strokeWidth=2;dashed=1;dashPattern=8 6;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="1060" y="720" as="sourcePoint" />
-            <mxPoint x="1700" y="720" as="targetPoint" />
+            <mxPoint x="1060" y="710" as="sourcePoint" />
+            <mxPoint x="1700" y="710" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="boundary" value="— Bearer-auth boundary (sync HTTP) —" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=2;fontFamily=Helvetica;fontColor=#A0522D;labelBackgroundColor=#FAF7F0;" vertex="1" parent="1">
-          <mxGeometry x="1180" y="708" width="400" height="24" as="geometry" />
+          <mxGeometry x="1180" y="698" width="400" height="24" as="geometry" />
         </mxCell>
 
         <!-- One-directional note - to the right of Sidecar, in the open right gutter -->
         <mxCell id="one-way-note" value="One-directional dependency:&#xa;sidecar holds NO Convex client.&#xa;Data flows IN via POST payload only." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#A0522D;fontSize=11;fontFamily=Helvetica;align=center;verticalAlign=middle;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="1060" y="780" width="320" height="60" as="geometry" />
+          <mxGeometry x="1500" y="780" width="320" height="60" as="geometry" />
         </mxCell>
 
         <!-- ============================================================== -->
@@ -169,13 +180,13 @@
         <!-- ============================================================== -->
 
         <!-- Legend -->
-        <mxCell id="legend" value="Edges:&#xa;  thick orange  — primary reactive data path (browser ↔ Convex via WebSocket)&#xa;  solid blue    — HTTPS request (browser → Next.js)&#xa;  dashed blue   — server-side fetchQuery/fetchMutation in RSC&#xa;  solid green   — OpenAI SDK call (provider isolated to llm/client.ts on each side)&#xa;  thick brown   — Convex action → sidecar (sync HTTP, bearer-auth)&#xa;  dashed grey   — health-only ping (no auth)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontFamily=Helvetica;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="200" y="1020" width="900" height="160" as="geometry" />
+        <mxCell id="legend" value="Edges:&#xa;  thick orange  — primary reactive data path (browser ↔ Convex via WebSocket)&#xa;  solid blue    — HTTPS request (browser → Next.js)&#xa;  dashed blue   — server-side fetchQuery/fetchMutation in RSC&#xa;  solid green   — OpenAI SDK call (one source: sidecar/src/llm/client.py)&#xa;  thick brown   — Convex action → sidecar (sync HTTP, bearer-auth)&#xa;  dashed purple — Langfuse trace export (OTel)&#xa;  dashed grey   — health-only ping (no auth)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontFamily=Helvetica;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1060" width="900" height="180" as="geometry" />
         </mxCell>
 
         <!-- Hosting note -->
-        <mxCell id="hosting" value="Hosting&#xa;• Browser:  any modern&#xa;• Next.js:  Vercel&#xa;• Convex:   Convex Cloud&#xa;• Sidecar:  local for v1 (Cloud Run deferred)&#xa;• OpenAI:   api.openai.com" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontFamily=Helvetica;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="1140" y="1020" width="360" height="160" as="geometry" />
+        <mxCell id="hosting" value="Hosting&#xa;• Browser:   any modern&#xa;• Next.js:   Vercel&#xa;• Convex:    Convex Cloud&#xa;• Sidecar:   local for v1 (Cloud Run deferred)&#xa;• OpenAI:    api.openai.com&#xa;• Langfuse:  self-hosted (devcontainer langfuse-web; per-app subdomain in prod)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontFamily=Helvetica;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="1060" width="500" height="180" as="geometry" />
         </mxCell>
 
       </root>

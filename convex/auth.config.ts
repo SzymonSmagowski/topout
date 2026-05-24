@@ -1,14 +1,15 @@
 /**
- * Convex Auth — provider discovery config consumed by `auth.ts`.
+ * Convex Auth — provider discovery config consumed by the Convex JWT verifier.
  *
- * This file lists the authentication providers Convex should trust. With
- * only Password configured, the providers array is the auth.ts re-export.
+ * `CONVEX_SITE_URL` is populated automatically by the Convex deployment.
  *
  * @see https://labs.convex.dev/auth/setup
- *
- * Implementation TODO for BackendDeveloper:
- *   export default {
- *     providers: [{ domain: process.env.SITE_URL, applicationID: 'convex' }],
- *   } as const;
  */
-export {};
+export default {
+  providers: [
+    {
+      domain: process.env.CONVEX_SITE_URL,
+      applicationID: 'convex',
+    },
+  ],
+};

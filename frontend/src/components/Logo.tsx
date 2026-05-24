@@ -1,9 +1,8 @@
 import type { SVGProps } from 'react';
 
 /**
- * TopOut wordmark — an abstract topographic line glyph (suggests a topo line
- * pulling up off the wall) paired with the wordmark. SVG so it adapts to both
- * themes via `currentColor`.
+ * TopOut wordmark — abstract topo-line glyph + lowercase wordmark.
+ * SVG uses `currentColor` so it adapts to light + dark themes.
  */
 export function Logo({ className, ...rest }: SVGProps<SVGSVGElement>) {
   return (

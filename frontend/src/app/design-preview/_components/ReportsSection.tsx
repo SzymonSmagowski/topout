@@ -4,7 +4,8 @@ import { AlertOctagon, ChevronRight, RefreshCw, Server, Sparkles } from 'lucide-
 import ReactMarkdown from 'react-markdown';
 import { useState } from 'react';
 
-import { GradePill } from './GradePill';
+import { GradePill } from '@/components/GradePill';
+
 import { REPORTS, type MockReport } from '../_data/mock';
 import { SectionHeader } from './SectionHeader';
 

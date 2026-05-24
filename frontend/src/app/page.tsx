@@ -1,5 +1,7 @@
+import { isAuthenticatedNextjs } from '@convex-dev/auth/nextjs/server';
 import { redirect } from 'next/navigation';
 
-export default function HomePage(): never {
-  redirect('/design-preview');
+export default async function HomePage(): Promise<never> {
+  const authed = await isAuthenticatedNextjs();
+  redirect(authed ? '/dashboard' : '/sign-in');
 }

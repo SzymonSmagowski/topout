@@ -5,8 +5,9 @@ import { useId, useState } from 'react';
 
 import { OUTCOME_LABEL, OUTCOMES, V_GRADES, type Outcome, type VGrade } from '@/lib/grades';
 
+import { GradePill } from '@/components/GradePill';
+
 import { GYMS } from '../_data/mock';
-import { GradePill } from './GradePill';
 import { SectionHeader } from './SectionHeader';
 
 interface DraftAttempt {

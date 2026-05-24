@@ -2,10 +2,11 @@ import { CalendarDays, Clock, MapPin, Pencil, Trash2 } from 'lucide-react';
 
 import { isSent, type Outcome, V_GRADES, type VGrade } from '@/lib/grades';
 
+import { GradePill } from '@/components/GradePill';
+import { SummaryBanner } from '@/components/SummaryBanner';
+
 import { gymName, MY_SESSIONS, type MockSession } from '../_data/mock';
-import { GradePill } from './GradePill';
 import { SectionHeader } from './SectionHeader';
-import { SummaryBanner } from './SummaryBanner';
 
 function formatDate(iso: string): string {
   const d = new Date(`${iso}T12:00:00Z`);

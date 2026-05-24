@@ -12,9 +12,10 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
+import { Logo } from '@/components/Logo';
+import { ThemeToggle } from '@/components/ThemeToggle';
+
 import { USER_ME } from '../_data/mock';
-import { Logo } from './Logo';
-import { ThemeToggle } from './ThemeToggle';
 
 export type SectionId =
   | 'auth'

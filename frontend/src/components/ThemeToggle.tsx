@@ -12,7 +12,6 @@ export function ThemeToggle() {
     setMounted(true);
   }, []);
 
-  // Avoid hydration mismatch — render a placeholder until next-themes settles.
   if (!mounted) {
     return (
       <button
