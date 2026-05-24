@@ -1,0 +1,22 @@
+{
+  "name": "topout",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TopOut — bouldering training coach. Next.js + Convex + Python LangGraph sidecar.",
+  "scripts": {
+    "dev": "./dev.sh",
+    "seed": "tsx scripts/seed.ts",
+    "convex:dev": "pnpm --filter topout-frontend exec convex dev",
+    "convex:deploy": "pnpm --filter topout-frontend exec convex deploy",
+    "typecheck": "pnpm --filter topout-frontend typecheck",
+    "lint": "pnpm --filter topout-frontend lint",
+    "sidecar:install": "cd sidecar && poetry install",
+    "sidecar:typecheck": "cd sidecar && poetry run mypy src",
+    "sidecar:lint": "cd sidecar && poetry run ruff check src && poetry run black --check src"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "dotenv": "^16.4.7"
+  },
+  "packageManager": "pnpm@11.0.8"
+}

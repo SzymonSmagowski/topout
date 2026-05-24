@@ -1,0 +1,14 @@
+# Top-level pnpm workspace for the topout monorepo.
+#
+# The frontend/ subdir has its own pnpm-workspace.yaml with build-script
+# allowlists (sharp, unrs-resolver) — that file controls package builds and
+# is NOT a workspace declaration. Keep both files consistent if you ever
+# enable additional native dependencies.
+packages:
+  - "frontend"
+
+# Native build script allowlist mirrored from frontend/pnpm-workspace.yaml so
+# `pnpm install` from the workspace root behaves the same as inside frontend/.
+allowBuilds:
+  sharp: true
+  unrs-resolver: true

@@ -1,0 +1,21 @@
+# top-level workspace gitignore for the topout repo (public).
+
+# env — NEVER commit
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# node
+node_modules/
+.pnp.*
+
+# turbo / build caches
+.turbo/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
