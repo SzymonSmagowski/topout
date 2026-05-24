@@ -21,42 +21,51 @@ watch your dashboard update live, get an AI-written weekly coaching report.
 Deferred for later: photo-beta multimodal LLM, goal tracking, mobile app,
 video analysis.
 
-## Architecture
+## Architecture at a glance
 
-Three pieces, one repo. Convex is the source of truth for data and runs all
-reactive queries; the Python sidecar is invoked synchronously by a Convex
-action only for the weekly report, where pandas-based time-series work and
-LangGraph orchestration earn their keep over plain Convex actions. The
-sidecar holds no Convex client — data flows in via the HTTP POST body.
+Three pieces, one repo:
 
-Diagrams: [`diagrams/`](./diagrams/) (data model, service topology,
-LangGraph topology).
+- **Convex** — auth, database, reactive queries, mutation orchestration. Schedules the per-session summary after `createSession`.
+- **Python sidecar** — the single LLM gateway. Both AI features (session summary, weekly report) route through it. No OpenAI SDK in Convex. Swap the model in `sidecar/src/llm/client.py` and nothing else changes.
+- **Langfuse** — every LLM call and every LangGraph node transition is traced. Keys optional; missing keys = graceful no-op.
+
+Diagrams: [`diagrams/`](./diagrams/) (data model, service topology, LangGraph topology).
 
 ## Run locally
 
 Prereqs: Node 24, pnpm via Corepack, Python 3.12+, Poetry.
 
 ```bash
-# One-time
+# Clone (topout is its own repo, not the monorepo)
 git clone https://github.com/SzymonSmagowski/topout.git
 cd topout
 pnpm install
 cd frontend && cp .env.local.example .env.local && cd ..
 cd sidecar  && cp .env.example .env             && cd ..
+cd sidecar  && poetry install                   && cd ..
+```
 
-# Fill in the env files: NEXT_PUBLIC_CONVEX_URL (from `npx convex dev`),
-# OPENAI_API_KEY (in the sidecar .env and in Convex via `npx convex env set`),
-# and matching SIDECAR_SECRET on both sides.
+**Fill in the env files before running:**
+- `frontend/.env.local` — `NEXT_PUBLIC_CONVEX_URL` (from step below)
+- `sidecar/.env` — `OPENAI_API_KEY`, `SIDECAR_SECRET` (generate: `openssl rand -hex 32`)
+- Convex deployment — `npx convex env set OPENAI_API_KEY …` and `npx convex env set SIDECAR_SECRET …` (same secret as sidecar)
 
-cd frontend && pnpm exec convex dev   # first run prompts to create a dev deployment
-cd ../sidecar && poetry install
+**One-time bootstrap** (generates `convex/_generated/`):
+```bash
+cd frontend && pnpm exec convex dev   # prompts login + provisions dev deployment
+# After "Convex functions ready" prints, Ctrl-C is fine.
+```
 
-# Day to day — one command starts everything:
+**Day to day — one command starts everything:**
+```bash
 ./dev.sh
 ```
 
-Open `http://localhost:3000`. The first thing you'll see is a sign-in
-screen; either register your own account or use the seed accounts below.
+Starts frontend (`:3000`), Convex dev server (schema sync), and Python sidecar (`:8000`).
+
+**Optional: Langfuse tracing** — open `http://localhost:3001` (login: `dev@example.com` / `devpassword`), create a project `topout-sidecar`, copy the API key pair into `sidecar/.env`. Leave the keys empty to skip tracing.
+
+Open `http://localhost:3000`. The first thing you'll see is a sign-in screen; register your own account or use the seed accounts below.
 
 ## Seed accounts
 
@@ -79,12 +88,27 @@ These credentials are intentionally documented — the seed accounts are
 demo identities, not personal accounts. The seed script refuses to run
 against a production Convex deployment.
 
+## Tests
+
+```bash
+# Frontend unit tests (Vitest — no live Convex needed)
+cd frontend && pnpm test
+
+# Frontend E2E (Playwright — requires ./dev.sh running first)
+cd frontend && pnpm test:e2e
+
+# Sidecar tests (pytest — no real API key needed, stubs ChatOpenAI)
+cd sidecar && poetry run pytest -q
+```
+
+74 tests total, all finish under 2 seconds.
+
 ## Stack
 
 - **Frontend** — Next.js 15 (App Router) + Tailwind v4 + Recharts + `react-markdown`. Deployed to Vercel.
 - **Backend** — Convex (DB + queries + mutations + actions + reactive subscriptions + Convex Auth Password provider). Deployed to Convex Cloud.
 - **Sidecar** — Python 3.14 + FastAPI + LangGraph 1.x + pandas + OpenAI SDK. Local-only for v1; Cloud Run deferred.
-- **LLM** — OpenAI `gpt-5.4-nano` via `OPENAI_API_KEY` + `OPENAI_MODEL`. Provider abstracted behind `convex/llm/client.ts` and `sidecar/src/llm/client.py` so a Gemini/Vertex AI swap is a one-file change.
+- **LLM** — OpenAI `gpt-5.4-nano` via `OPENAI_API_KEY` + `OPENAI_MODEL`. Abstracted behind `sidecar/src/llm/client.py` — one file to swap the model across all AI features.
 
 ## Repository layout
 

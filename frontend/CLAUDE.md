@@ -2,44 +2,65 @@
 
 Next.js 15 + Tailwind v4 + Convex client. The user-facing surface.
 
-## What exists already (Designer scaffold)
+## Routes
 
-- `src/app/design-preview/page.tsx` — full design preview at `/design-preview`.
-- `src/app/page.tsx` — root redirect to `/design-preview` (replace with auth-aware redirect once Convex Auth lands).
-- `src/app/layout.tsx` — Inter Tight + JetBrains Mono fonts wired via `next/font/google`.
-- `src/app/providers.tsx` — next-themes provider (class strategy).
-- `src/app/globals.css` — Tailwind v4 `@theme` tokens + `@layer components` form primitives.
-- `src/lib/grades.ts` — `V_GRADES`, `OUTCOMES`, derived types. **Must stay in lockstep with `convex/lib/enums.ts`.**
-- `src/lib/grade-colors.ts` — the sienna ramp. Every grade-coloured pixel reads from here.
-- `src/lib/ids.ts` — temporary branded `Id<T>` mirror. **Delete once `convex/_generated/dataModel.d.ts` exists.**
-- `src/lib/utils.ts` — `cn()` helper (tailwind-merge + clsx).
-- `src/app/design-preview/_components/*` — preview-only components. Promote individual ones to `src/components/` as production code claims them.
+Two route groups under `src/app/`:
 
-## What FrontendDeveloper adds
+| Group | Routes | Notes |
+|---|---|---|
+| `(auth)` | `/sign-in`, `/register` | Convex Auth Password pages |
+| `(app)` | `/dashboard`, `/sessions`, `/sessions/new`, `/sessions/[sessionId]`, `/reports`, `/reports/[reportId]`, `/partners`, `/partners/[userId]` | Protected; `middleware.ts` redirects unauthenticated |
 
-See `apps/topout/docs/architecture.md` §8 for the full route map. Highlights:
+Plus `src/app/page.tsx` (redirects to `/dashboard`), `src/app/design-preview/page.tsx` (static design reference).
 
-1. Install Convex deps: `pnpm add convex @convex-dev/auth @auth/core`.
-2. Add `<ConvexAuthNextjsServerProvider>` in `layout.tsx` and `<ConvexProviderWithAuth>` in `providers.tsx`.
-3. Add `src/middleware.ts` with `convexAuthNextjsMiddleware` route guarding.
-4. Replace `src/lib/ids.ts` imports with `import type { Id } from '@convex/_generated/dataModel'`.
-5. Build the 11 routes listed in the architecture doc, reusing existing design components.
+## Components
+
+14 production components in `src/components/`:
+
+- `AppShell` — nav + layout wrapper
+- `Dashboard` — takes `userId: Id<'users'>`, same for self and partner
+- `LogSessionForm` — writes via `createSession` mutation; all grade/outcome options from `@/lib/grades.ts`
+- `SessionCard`, `SessionsList`, `SessionDetail` — session display hierarchy
+- `AttemptRow` — single attempt in a session form or detail view
+- `GradePill`, `OutcomePill` — colour-coded badges reading from `@/lib/grade-colors.ts`
+- `GymCombobox` — autocomplete backed by `gyms.listByPrefix` query
+- `SummaryBanner` — shows AI summary status (pending / done / error)
+- `SidecarHealthBanner` — surfaces sidecar unreachable state
+- `ConfirmModal`, `ThemeToggle`, `Logo`
+
+## Testing
+
+```bash
+pnpm test           # Vitest unit + integration (uses src/__mocks__/)
+pnpm test:e2e       # Playwright (requires ./dev.sh running first)
+pnpm typecheck      # tsc --noEmit (requires pnpm exec convex dev to have run once)
+```
+
+`src/__mocks__/` — hand-rolled stubs for `convex-generated-api.ts` and `convex-generated-dataModel.ts`. Keeps unit tests independent of a live Convex deployment. When you add a new public function to the Convex schema, add a stub entry here too.
 
 ## Invariants
 
-- Grade colours come from `@/lib/grade-colors.ts` only — no inline `bg-sienna-*` outside that file.
-- The `Dashboard` component takes `userId: Id<'users'>` and never reads a global "current user".
-- `SummaryStatus` is a literal union, not booleans.
-- Everywhere reactive uses `useQuery`. No `useEffect`-then-fetch.
-- No barrel files. Import from exact paths.
+- Grade colours from `@/lib/grade-colors.ts` only — no inline `bg-sienna-*` elsewhere.
+- `Dashboard` takes `userId: Id<'users'>` prop, never reads a global "current user".
+- All reactive data via `useQuery`. No `useEffect`-then-fetch.
 - Numeric values render in `font-mono tabular-nums`.
+- No barrel files — import from exact paths.
+- `SummaryStatus` is a string literal union, not a boolean trio.
+
+## Bootstrap requirement
+
+On a fresh clone, `convex/_generated/` doesn't exist yet. Before `pnpm typecheck` or `pnpm test` will pass:
+
+```bash
+cd apps/topout/frontend
+pnpm exec convex dev   # prompts login + provisions dev deployment; Ctrl-C after first sync
+```
 
 ## Local dev
 
 ```bash
-pnpm install                                 # from apps/topout/frontend
-cp .env.local.example .env.local             # fill NEXT_PUBLIC_CONVEX_URL
-pnpm dev                                     # next dev only
-# or, from apps/topout/:
-../dev.sh                                    # next dev + convex dev + sidecar together
+pnpm install                    # from apps/topout/frontend
+cp .env.local.example .env.local  # fill NEXT_PUBLIC_CONVEX_URL
+# Day to day — from apps/topout/:
+./dev.sh                        # next dev + convex dev + sidecar together
 ```

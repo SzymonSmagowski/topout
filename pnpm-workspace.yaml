@@ -10,5 +10,6 @@ packages:
 # Native build script allowlist mirrored from frontend/pnpm-workspace.yaml so
 # `pnpm install` from the workspace root behaves the same as inside frontend/.
 allowBuilds:
+  esbuild: true
   sharp: true
   unrs-resolver: true

@@ -4,9 +4,9 @@ Bouldering training coach. Three services, one public repo.
 
 ## Subdirectories
 
-- `frontend/` — Next.js 15 app. Routes, components, Convex client. See `frontend/CLAUDE.md` (Developer to add).
-- `convex/` — Convex schema + queries + mutations + actions + scheduler. The data model SoT is `convex/schema.ts`. See `convex/CLAUDE.md` (Developer to add).
-- `sidecar/` — Python FastAPI + LangGraph service for the weekly-report feature. See `sidecar/README.md`.
+- `frontend/` — Next.js 15 app. 11 routes, 14 components, Convex client. See `frontend/CLAUDE.md`.
+- `convex/` — Convex schema + queries + mutations + actions + scheduler. The data model SoT is `convex/schema.ts`. See `convex/CLAUDE.md`.
+- `sidecar/` — Python FastAPI + LangGraph service. Single LLM gateway for both AI features. See `sidecar/CLAUDE.md`.
 - `scripts/` — Node scripts (currently just `seed.ts`).
 - `diagrams/` — draw.io sources for architecture diagrams + their rendered PNGs.
 - `docs/` — long-form documentation. `docs/architecture.md` is the implementation contract from the Architect agent.
