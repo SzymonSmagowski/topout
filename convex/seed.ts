@@ -17,7 +17,6 @@
  * @see apps/topout/docs/architecture.md §5.7
  * @see docs/specs/topout/seed-data.md
  */
-import { createAccount } from '@convex-dev/auth/server';
 import { v } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
@@ -183,52 +182,32 @@ export const wipeSeedUsers = internalMutation({
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Seed user creation — uses Convex Auth's `createAccount` so seed users go
-// through the same plumbing as real signUp (Password provider scrypt hash +
-// authAccounts row + users row).
+// Seed user creation — split across two functions because Convex Auth's
+// `createAccount` helper requires an ActionCtx (it internally calls
+// `ctx.runMutation("auth:store", ...)`). The action layer in `seedActions.ts`
+// orchestrates: query existing → createAccount if missing → patch isSeed.
 // ---------------------------------------------------------------------------
 
-const createSeedUserArgs = v.object({
-  email: v.string(),
-  password: v.string(),
-  displayName: v.string(),
-});
-
-export const createSeedUserMutation = internalMutation({
-  args: createSeedUserArgs,
-  handler: async (ctx, { email, password, displayName }): Promise<{ userId: Id<'users'> }> => {
-    // Idempotency: if the seed user already exists (e.g. partial prior run),
-    // reuse the row instead of inserting a duplicate.
-    const existing = await ctx.db
+export const findUserIdByEmail = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, { email }): Promise<Id<'users'> | null> => {
+    const row = await ctx.db
       .query('users')
       .withIndex('email', (q) => q.eq('email', email))
       .first();
-    if (existing !== null) {
-      await ctx.db.patch(existing._id, { isSeed: true, displayName });
-      return { userId: existing._id };
-    }
+    return row?._id ?? null;
+  },
+});
 
-    const { user } = await createAccount(ctx, {
-      provider: 'password',
-      account: {
-        id: email,
-        secret: password,
-      },
-      profile: {
-        email,
-        displayName,
-        isSeed: true,
-      },
-      shouldLinkViaEmail: false,
-      shouldLinkViaPhone: false,
-    });
-    // Convex Auth's Password provider re-runs the `profile()` callback in
-    // `auth.ts` to shape the row it inserts. That callback only looks at
-    // params, so `isSeed: true` from the explicit `profile` above gets
-    // overwritten back to `false`. Patch directly to restore the flag —
-    // both `wipeSeedUsers` and the `byIsSeed` index depend on it.
-    const userId = user._id as Id<'users'>;
-    await ctx.db.patch(userId, { isSeed: true });
+// Patches the seed flag + displayName after createAccount has minted the row.
+// Convex Auth's Password provider re-runs the `profile()` callback in
+// `auth.ts`, which doesn't echo `isSeed: true` from the explicit profile arg,
+// so we always need to patch it here. `wipeSeedUsers` and the `byIsSeed`
+// index both depend on this flag being true.
+export const markSeedUserPostAccount = internalMutation({
+  args: { userId: v.id('users'), displayName: v.string() },
+  handler: async (ctx, { userId, displayName }): Promise<{ userId: Id<'users'> }> => {
+    await ctx.db.patch(userId, { isSeed: true, displayName });
     return { userId };
   },
 });

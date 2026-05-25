@@ -15,6 +15,7 @@
  * @see docs/specs/topout/seed-data.md
  */
 
+import { createAccount } from '@convex-dev/auth/server';
 import { v } from 'convex/values';
 
 import { internal } from './_generated/api';
@@ -302,9 +303,28 @@ export const run = internalAction({
 
     let perUserSeed = rngSeed;
     for (const spec of targetUsers) {
-      const { userId } = await ctx.runMutation(internal.seed.createSeedUserMutation, {
+      // Convex Auth's `createAccount` helper requires ActionCtx (it calls
+      // `ctx.runMutation("auth:store", ...)` internally), so the lookup +
+      // mint flow is orchestrated here in the action layer.
+      let userId = await ctx.runQuery(internal.seed.findUserIdByEmail, {
         email: spec.email,
-        password: SEED_PASSWORD,
+      });
+      if (userId === null) {
+        const { user } = await createAccount(ctx, {
+          provider: 'password',
+          account: { id: spec.email, secret: SEED_PASSWORD },
+          profile: {
+            email: spec.email,
+            displayName: spec.displayName,
+            isSeed: true,
+          },
+          shouldLinkViaEmail: false,
+          shouldLinkViaPhone: false,
+        });
+        userId = user._id as Id<'users'>;
+      }
+      await ctx.runMutation(internal.seed.markSeedUserPostAccount, {
+        userId,
         displayName: spec.displayName,
       });
       createdUserIds.push(userId);
