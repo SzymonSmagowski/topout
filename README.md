@@ -120,10 +120,13 @@ topout/
 ├── scripts/seed.ts      `pnpm seed` entry point
 ├── diagrams/            Architecture diagrams (.drawio + .png)
 ├── docs/architecture.md API contract + design rationale
+├── docs/code-tour.md    File-by-file walkthrough of every layer
 ├── dev.sh               Starts all 3 services together
 ├── package.json         Workspace root
 └── README.md            (this file)
 ```
+
+**Want the deep dive?** → [`docs/code-tour.md`](./docs/code-tour.md) walks every nested folder and file, annotated by purpose, ownership, and invariants. Read it top-down or jump to any layer; each layer ends with a "what to read first" pointer.
 
 ## What's not in the repo (intentionally)
 
