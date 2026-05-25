@@ -1,8 +1,26 @@
 # TopOut deployment plan
 
-**Status:** locked, awaiting interactive logins. Drafted 2026-05-25.
+**Status:** Phase 1 + 2 ✅ complete · Phase 3 + 4 + 5 ⏳ pending. Drafted 2026-05-25, last updated 2026-05-25.
 
 Three services, five phases, ~60 min wall-clock. Pause after each phase per the standing pause-after-each-agent rule.
+
+## Progress snapshot
+
+| Phase | Owner | Status | Notes |
+|---|---|---|---|
+| 1 — interactive logins | user | ✅ done | `npx convex login` + `vercel login` |
+| 2 — Convex prod deploy + env | DeploymentEngineer | ✅ done | Prod at `https://accurate-cuttlefish-581.convex.cloud`. Two type-bugs fixed inline (`f85a553`). |
+| 3 — Sidecar on apartment VM | CloudEngineer | ⏳ pending | Reads `SIDECAR_SECRET` from `apps/topout/.sidecar-secret.scratch` |
+| 4 — Vercel deploy | DeploymentEngineer | ⏳ pending | Build cmd must wrap `convex deploy --cmd 'pnpm run build'` |
+| 5 — End-to-end smoke | user + Claude | ⏳ pending | |
+
+## What's online right now
+
+- ✅ **Convex backend** — schema + 22 functions + 21 indexes deployed; env vars set (allowlist, OPENAI_API_KEY, OPENAI_MODEL=gpt-5.4-nano, PYTHON_SIDECAR_URL, SIDECAR_SECRET, SITE_URL, JWT_PRIVATE_KEY, JWKS).
+- ❌ **Frontend** — no Vercel deploy yet. `topout.smagowskiai.dev` does not resolve.
+- ❌ **Sidecar** — no VM container yet. AI summaries + weekly reports will fail until Phase 3 lands.
+
+To test the UI in the interim: `cd apps/topout/frontend && pnpm dev` with `.env.local` pointed at the prod Convex URL — UI works, but anything that calls the sidecar (session summary on log + report generation) will error with `sidecar_unreachable`.
 
 ## Locked decisions
 
@@ -37,41 +55,54 @@ Three services, five phases, ~60 min wall-clock. Pause after each phase per the 
 
 ## Execution order
 
-### Phase 1 — interactive logins (user, ~5 min) ← start here
+### Phase 1 — interactive logins (user, ~5 min) — ✅ DONE 2026-05-25
 
 ```bash
 cd apps/topout/frontend
 npx convex login     # browser, Gmail/GitHub auth
-vercel login         # email + magic link
+npx vercel login     # IMPORTANT: `npx vercel` (vercel CLI isn't on PATH globally)
 ```
 
-User signals "ready" when both done.
+**Gotcha learned:** Convex's "Saved credentials" message can confirm the local *anonymous* mode without performing Cloud OAuth — check `npx convex deploy` errors out with "log in by running npx convex login" to disambiguate. First `convex deploy` is interactive: pick team, pick project slug (we chose `topout`).
 
-### Phase 2 — Convex prod deploy + env (Claude, ~10 min)
+### Phase 2 — Convex prod deploy + env — ✅ DONE 2026-05-25
+
+Prod URL: **`https://accurate-cuttlefish-581.convex.cloud`**
+Dashboard: **`https://dashboard.convex.dev/d/accurate-cuttlefish-581`**
+
+What ran (in order):
 
 ```bash
 cd apps/topout/frontend
 
-# 1. Deploy schema + functions to a new prod deployment
+# 1. First-time deploy (interactive — team + slug prompts).
 npx convex deploy
+# Two type errors had to be fixed inline before this succeeded:
+#   - convex/lib/errors.ts — TypedErrorPayload needed [key: string]: Value | undefined
+#   - convex/seed.ts + seedActions.ts — createAccount requires ActionCtx; moved out of internalMutation
+# Fix shipped in topout commit f85a553.
 
-# 2. Mint fresh JWT keys for prod (distinct from dev anonymous keys)
-npx @convex-dev/auth --prod
+# 2. Mint prod JWT keys non-interactively.
+# Without --web-server-url the CLI demands SITE_URL via stdin and breaks scripting.
+npx @convex-dev/auth --prod --skip-git-check --web-server-url "https://topout.smagowskiai.dev"
 
-# 3. Set deployment env vars
+# 3. Env vars (the 5 not set by the auth init).
 npx convex env set --prod ALLOWED_REGISTRATION_EMAILS "smagowski.szymon@gmail.com"
-npx convex env set --prod OPENAI_API_KEY "$(grep ^OPENAI_API_KEY ../../portfolio-ai-lab/backend/.env | cut -d= -f2-)"
+OPENAI_KEY=$(grep '^OPENAI_API_KEY' ../../portfolio-ai-lab/backend/.env | head -1 | cut -d= -f2-)
+npx convex env set --prod OPENAI_API_KEY "$OPENAI_KEY"
 npx convex env set --prod OPENAI_MODEL "gpt-5.4-nano"
-npx convex env set --prod SIDECAR_SECRET "$(openssl rand -hex 32)"
 npx convex env set --prod PYTHON_SIDECAR_URL "https://topout-sidecar.smagowskiai.dev"
-npx convex env set --prod SITE_URL "https://topout.smagowskiai.dev"
+SIDECAR_SECRET=$(openssl rand -hex 32)
+echo "$SIDECAR_SECRET" > /workspaces/Claude-Code-Skills/apps/topout/.sidecar-secret.scratch
+chmod 600 /workspaces/Claude-Code-Skills/apps/topout/.sidecar-secret.scratch
+npx convex env set --prod SIDECAR_SECRET "$SIDECAR_SECRET"
 ```
 
-**Save** the SIDECAR_SECRET value locally (Claude memory or scratch file) — feed it to CloudEngineer in Phase 3 so the sidecar uses the matching value.
+`SIDECAR_SECRET` lives in `apps/topout/.sidecar-secret.scratch` (gitignored via `*.scratch`). Phase 3 reads it verbatim.
 
-**Smoke test:** Convex dashboard shows all 22 functions deployed, 21 indexes built.
-
-→ PAUSE for verdict.
+**Two operational lessons from this phase** (rotated key + memory updated):
+- ⚠️ **Don't run `convex env list`** against any deployment whose contents you don't already know — Convex CLI prints values, not just keys, and dumped a reused OpenAI key into a subagent transcript. Rotation done; rule baked into `DeploymentEngineer/AGENT.md`.
+- `vercel` is not on PATH globally — always invoke via `npx vercel`.
 
 ### Phase 3 — Sidecar on apartment VM (CloudEngineer agent, ~20 min)
 
@@ -97,34 +128,47 @@ Dispatch CloudEngineer with brief:
 
 → PAUSE for verdict.
 
-### Phase 4 — Vercel deploy (Claude, ~10 min)
+### Phase 4 — Vercel deploy (DeploymentEngineer, ~10 min)
+
+Prereqs from Phase 2:
+- Convex prod URL: `https://accurate-cuttlefish-581.convex.cloud`
+- Convex deploy key: get from `https://dashboard.convex.dev/d/accurate-cuttlefish-581/settings/deploy-keys` (one-time mint, store in 1Password)
 
 ```bash
 cd apps/topout/frontend
 
-# Link to a new Vercel project (interactive on first run: pick scope, accept project name)
-vercel link
+# Link to a new Vercel project. Interactive — pick scope (smagowskiszymon-4248),
+# accept project name `topout` (or override).
+npx vercel link
 
-# Set Vercel env vars (production scope)
-vercel env add NEXT_PUBLIC_CONVEX_URL production    # paste <prod>.convex.cloud URL from Phase 2
-vercel env add CONVEX_DEPLOY_KEY production         # paste prod deploy key from Phase 2
+# Set Vercel env vars (production scope). vercel env add IS interactive — it
+# prompts you to paste the value. To script: pipe via stdin.
+echo "https://accurate-cuttlefish-581.convex.cloud" | npx vercel env add NEXT_PUBLIC_CONVEX_URL production
+# Then paste the Convex deploy key when prompted (mint from dashboard):
+npx vercel env add CONVEX_DEPLOY_KEY production
 
-# Deploy
-vercel --prod
+# First prod deploy.
+npx vercel --prod
 ```
 
-**Build command override:** in Vercel project settings → Build & Development Settings:
+**Build command override (load-bearing):** in Vercel project settings → Build & Development Settings:
 
-- Build Command: `pnpm exec convex deploy --cmd 'pnpm run build'`
-  - This ensures `_generated/` exists in the peer `../convex/` directory before Next compiles. The `--cmd` flag runs the inner build only AFTER Convex codegen completes.
+- **Build Command:** `pnpm exec convex deploy --cmd 'pnpm run build'`
+  - Without this, the first build fails with `module not found: convex/_generated/api`. The `--cmd` wrapper runs Convex codegen first so the peer `../convex/_generated/` exists before Next compiles.
+- **Install Command:** Vercel auto-detects pnpm from `pnpm-lock.yaml`. If not, set to `pnpm install`.
+- **Root Directory:** `apps/topout/frontend` (if Vercel is pointed at the monorepo root, which it shouldn't be — but if so, set this).
 
-**Custom domain:** in Vercel project → Domains → add `topout.smagowskiai.dev`. Vercel emits the required CNAME target.
+**Custom domain:** Vercel project → Domains → add `topout.smagowskiai.dev`. Vercel emits a CNAME target (usually `cname.vercel-dns.com`).
 
-**Cloudflare CNAME:** add `topout → cname.vercel-dns.com`, DNS-only (not proxied).
+**Cloudflare CNAME:** in the smagowskiai.dev zone, add:
+```
+topout  CNAME  cname.vercel-dns.com  DNS only  (TTL Auto)
+```
+**DNS only**, *not* proxied — Vercel terminates its own TLS.
 
 Wait ~1 min for Vercel to verify domain ownership.
 
-**Smoke test:** `https://topout.smagowskiai.dev/sign-in` → 200.
+**Smoke test:** `curl -I https://topout.smagowskiai.dev/sign-in` → `HTTP/2 200`.
 
 → PAUSE for verdict.
 
@@ -156,10 +200,31 @@ Wait ~1 min for Vercel to verify domain ownership.
 - Langfuse: self-hosted on apartment VM, $0
 - OpenAI: ~$0.001 per AI summary, ~$0.01 per weekly report. Negligible.
 
-## Repo state when this plan was written
+## Repo state log
 
-- HEAD: `8089ce0` — `feat(auth): server-side email allowlist for invite-only registration`
-- All work pushed to `github.com/SzymonSmagowski/topout`
+### After Phase 2 (2026-05-25)
+- HEAD: `f85a553` — `fix(convex): satisfy strict typecheck for prod deploy`
+- Pushed to `github.com/SzymonSmagowski/topout`
+- Convex prod deployment created: `accurate-cuttlefish-581`
+- 8 env vars set on prod: `ALLOWED_REGISTRATION_EMAILS`, `OPENAI_API_KEY` (rotated), `OPENAI_MODEL`, `PYTHON_SIDECAR_URL`, `SIDECAR_SECRET`, `SITE_URL`, `JWT_PRIVATE_KEY`, `JWKS`
+- `apps/topout/.sidecar-secret.scratch` — the SIDECAR_SECRET value (gitignored, chmod 600)
 - Local services shut down
+
+### Initial draft (2026-05-25, pre-Phase-1)
+- HEAD: `8089ce0` — `feat(auth): server-side email allowlist for invite-only registration`
 - `convex/auth.ts` profile() throws `email_not_allowlisted` when `ALLOWED_REGISTRATION_EMAILS` is set and the email doesn't match (case-insensitive; `@topout.local` exempt)
 - Test suite: 74 tests passing in <2s locally (5 sidecar + 2 contract + 4 component vitest + 1 e2e skipped)
+
+## Resuming in a future session
+
+If the next session needs to pick up here, the load-bearing files are:
+
+1. **This plan** — `apps/topout/docs/deployment-plan.md`. Phase status table at the top tells you where to resume.
+2. **`apps/topout/.sidecar-secret.scratch`** — read verbatim into the Phase 3 CloudEngineer brief. If missing, regenerate via `openssl rand -hex 32` AND update Convex prod env (`npx convex env set --prod SIDECAR_SECRET ...`) — both sides must match.
+3. **`.claude/agents/DeploymentEngineer/AGENT.md`** — registered in next session's subagent list. Dispatch with `subagent_type: "DeploymentEngineer"` for Phase 4.
+4. **`.claude/agents/CloudEngineer/AGENT.md`** — for Phase 3 (sidecar VM + Caddy + DNS + Langfuse).
+5. **`.claude/memory/feedback_subagent_env_list_leak.md`** — restate "do not `convex env list`" in every deployment subagent brief.
+
+Next session prompt suggestion:
+
+> Resume the topout deploy. Read `apps/topout/docs/deployment-plan.md`, see the progress table — Phase 2 is done. Dispatch CloudEngineer for Phase 3. Pause after each phase per the standing rule.
