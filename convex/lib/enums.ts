@@ -122,6 +122,7 @@ export const ERROR_KINDS = [
   // auth
   'not_authenticated',
   'email_taken',
+  'email_not_allowlisted',
   // sessions
   'session_not_found',
   'not_session_owner',

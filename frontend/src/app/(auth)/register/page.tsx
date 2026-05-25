@@ -156,6 +156,10 @@ function convexAuthMessage(data: unknown): string | null {
   switch (kind) {
     case 'email_taken':
       return 'That email is already registered. Sign in instead?';
+    case 'email_not_allowlisted': {
+      const msg = (data as { message?: string }).message;
+      return msg ?? 'Registration is invite-only. Contact the operator to be added.';
+    }
     default:
       return null;
   }
@@ -164,6 +168,9 @@ function convexAuthMessage(data: unknown): string | null {
 function humanizeRegisterError(raw: string): string {
   if (/already/i.test(raw) || /taken/i.test(raw) || /duplicate/i.test(raw)) {
     return 'That email is already registered. Sign in instead?';
+  }
+  if (/invite-only|not_allowlisted|allowlist/i.test(raw)) {
+    return 'Registration is invite-only. Contact the operator to be added.';
   }
   return 'Could not create account. Try again.';
 }
