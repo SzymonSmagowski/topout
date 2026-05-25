@@ -230,11 +230,13 @@ const runArgs = v.object({
   rngSeed: v.optional(v.number()),
   users: v.optional(v.union(v.literal('alex'), v.literal('sam'), v.literal('all'))),
   insertFollows: v.optional(v.boolean()),
+  reportsPerUser: v.optional(v.number()),
 });
 
 export interface SeedSummary {
   readonly deployment: string;
   readonly usersCreated: number;
+  readonly reportsCreated: number;
   readonly sessionsCreated: number;
   readonly attemptsCreated: number;
   readonly gymsEnsured: number;
@@ -344,9 +346,27 @@ export const run = internalAction({
       }
     }
 
+    // 6. Mock weekly reports (opt-in via --reports N).
+    let reportsCreated = 0;
+    const reportsPerUser = args.reportsPerUser ?? 0;
+    if (reportsPerUser > 0) {
+      for (let i = 0; i < targetUsers.length; i += 1) {
+        const spec = targetUsers[i];
+        const userId = createdUserIds[i];
+        if (spec === undefined || userId === undefined) continue;
+        const { reportsCreated: n } = await ctx.runMutation(internal.seed.insertMockReports, {
+          userId,
+          displayName: spec.displayName,
+          weeksCount: reportsPerUser,
+        });
+        reportsCreated += n;
+      }
+    }
+
     return {
       deployment,
       usersCreated: createdUserIds.length,
+      reportsCreated,
       sessionsCreated,
       attemptsCreated,
       gymsEnsured: gymIds.length,

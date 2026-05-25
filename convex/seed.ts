@@ -253,3 +253,231 @@ export const insertFollow = internalMutation({
     return { followId };
   },
 });
+
+// ---------------------------------------------------------------------------
+// Mock weekly reports — for `pnpm seed --reports N`.
+//
+// Direct-inserts a weeklyReports row with REAL stats computed from the
+// seed user's sessions in that week, plus a TEMPLATED narrative that quotes
+// those numbers. The trailing disclaimer line marks the report as mocked so
+// nobody mistakes it for a real LangGraph + OpenAI generation.
+// ---------------------------------------------------------------------------
+
+const SENT_OUTCOMES = new Set(['flash', 'send', 'repeat']);
+
+// Grade rank for "top grade" comparisons. Mirrors V_GRADES order.
+const GRADE_RANK: Readonly<Record<string, number>> = {
+  VB: 0, V0: 1, V1: 2, V2: 3, V3: 4, V4: 5, V5: 6, V6: 7, V7: 8, V8: 9,
+  V9: 10, V10: 11, V11: 12, V12: 13, V13: 14, V14: 15, V15: 16, V16: 17, V17: 18,
+};
+
+interface WeekStats {
+  readonly sessions: number;
+  readonly gyms: number;
+  readonly sends: number;
+  readonly attempts: number;
+  readonly sendRate: number; // 0..1
+  readonly topGrade: string | null;
+  readonly topGradeSends: number;
+  readonly avgEffort: number;
+  readonly pyramid: Readonly<Record<string, number>>; // grade -> sends
+}
+
+function bestGrade(grades: readonly string[]): string | null {
+  let best: string | null = null;
+  let bestRank = -1;
+  for (const g of grades) {
+    const r = GRADE_RANK[g] ?? -1;
+    if (r > bestRank) {
+      bestRank = r;
+      best = g;
+    }
+  }
+  return best;
+}
+
+function formatPyramid(pyramid: Readonly<Record<string, number>>): string {
+  const entries = Object.entries(pyramid)
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => (GRADE_RANK[b] ?? 0) - (GRADE_RANK[a] ?? 0));
+  if (entries.length === 0) return '_no sends_';
+  return entries.map(([g, n]) => `${n}×${g}`).join(', ');
+}
+
+function formatDate(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function buildNarrative(weekStart: number, stats: WeekStats, displayName: string): string {
+  const dateStr = formatDate(weekStart);
+  const sendRatePct = Math.round(stats.sendRate * 100);
+
+  if (stats.sessions === 0) {
+    return [
+      `# Week recap — ${dateStr}`,
+      '',
+      'No sessions logged this week.',
+      '',
+      '*Mock-seeded report. Real reports use LangGraph → OpenAI via the sidecar.*',
+    ].join('\n');
+  }
+
+  const lines: string[] = [];
+  lines.push(`# Week recap — ${dateStr}`);
+  lines.push('');
+  lines.push(
+    `**${stats.sessions} session${stats.sessions === 1 ? '' : 's'}** at **${stats.gyms} gym${stats.gyms === 1 ? '' : 's'}** this week — ` +
+      `**${stats.sends} sends on ${stats.attempts} attempts** (send rate **${sendRatePct}%**).`,
+  );
+  if (stats.topGrade !== null) {
+    lines.push(
+      `Top grade: **${stats.topGrade}** (${stats.topGradeSends} send${stats.topGradeSends === 1 ? '' : 's'}).`,
+    );
+  }
+  lines.push('');
+  lines.push('## Send pyramid');
+  lines.push(formatPyramid(stats.pyramid));
+  lines.push('');
+  lines.push('## At a glance');
+  lines.push(`- Average perceived effort: **${stats.avgEffort.toFixed(1)} / 10**`);
+  lines.push(`- Send rate: **${sendRatePct}%**`);
+  if (stats.topGrade !== null && stats.topGradeSends >= 2) {
+    lines.push(`- **${stats.topGrade}** is becoming a repeatable grade — push for a flash next session.`);
+  } else if (stats.topGrade !== null) {
+    lines.push(`- **${stats.topGrade}** is a project — back-to-back attempts next session should consolidate it.`);
+  }
+  lines.push('');
+  lines.push('## Coach take');
+  if (sendRatePct >= 40) {
+    lines.push(
+      `${displayName.split(' ')[0]}, the send rate is high — that means the line of difficulty is sitting comfortably. Step up a grade on your warm-up next week.`,
+    );
+  } else if (sendRatePct >= 20) {
+    lines.push(
+      `${displayName.split(' ')[0]}, you're spending time on projects rather than ticking low-effort grades. The shape of the pyramid is healthy.`,
+    );
+  } else {
+    lines.push(
+      `${displayName.split(' ')[0]}, a lower send rate this week. If it's project work — keep going. If it's fatigue — consider a deload session.`,
+    );
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('*Mock-seeded report. Real reports use LangGraph → OpenAI via the sidecar.*');
+  return lines.join('\n');
+}
+
+export const insertMockReports = internalMutation({
+  args: {
+    userId: v.id('users'),
+    displayName: v.string(),
+    weeksCount: v.number(),
+  },
+  handler: async (ctx, { userId, displayName, weeksCount }): Promise<{ reportsCreated: number }> => {
+    if (weeksCount <= 0) return { reportsCreated: 0 };
+
+    // Compute week boundaries — most recent N completed weeks. Same Monday-UTC
+    // anchor as `weekStartFor` so report ranges line up with sessions.
+    const now = Date.now();
+    const nowD = new Date(now);
+    const daysFromMon = (nowD.getUTCDay() + 6) % 7;
+    const thisWeekStart = Date.UTC(
+      nowD.getUTCFullYear(),
+      nowD.getUTCMonth(),
+      nowD.getUTCDate() - daysFromMon,
+    );
+    const WEEK_MS = 7 * 86_400_000;
+
+    const sessions = await ctx.db
+      .query('sessions')
+      .withIndex('byUserAndDate', (q) => q.eq('userId', userId))
+      .collect();
+
+    let reportsCreated = 0;
+    for (let i = 1; i <= weeksCount; i += 1) {
+      const weekStart = thisWeekStart - i * WEEK_MS;
+      const weekEnd = weekStart + WEEK_MS - 1;
+
+      // Idempotent: skip if a report for this week already exists.
+      const existing = await ctx.db
+        .query('weeklyReports')
+        .withIndex('byUserAndWeekStart', (q) =>
+          q.eq('userId', userId).eq('weekStart', weekStart),
+        )
+        .first();
+      if (existing !== null) continue;
+
+      const weekSessions = sessions.filter(
+        (s) => s.date >= weekStart && s.date <= weekEnd,
+      );
+      const gymIds = new Set(weekSessions.map((s) => s.gymId));
+
+      let sends = 0;
+      let attempts = 0;
+      let effortSum = 0;
+      const pyramid: Record<string, number> = {};
+      const sentGrades: string[] = [];
+
+      for (const s of weekSessions) {
+        effortSum += s.perceivedEffort;
+        const sessionAttempts = await ctx.db
+          .query('attempts')
+          .withIndex('bySession', (q) => q.eq('sessionId', s._id))
+          .collect();
+        for (const a of sessionAttempts) {
+          attempts += a.attemptCount;
+          if (SENT_OUTCOMES.has(a.outcome)) {
+            sends += a.attemptCount;
+            sentGrades.push(a.grade);
+            pyramid[a.grade] = (pyramid[a.grade] ?? 0) + a.attemptCount;
+          }
+        }
+      }
+
+      const top = bestGrade(sentGrades);
+      const stats: WeekStats = {
+        sessions: weekSessions.length,
+        gyms: gymIds.size,
+        sends,
+        attempts,
+        sendRate: attempts > 0 ? sends / attempts : 0,
+        topGrade: top,
+        topGradeSends: top === null ? 0 : (pyramid[top] ?? 0),
+        avgEffort: weekSessions.length > 0 ? effortSum / weekSessions.length : 0,
+        pyramid,
+      };
+
+      const narrativeMd = buildNarrative(weekStart, stats, displayName);
+
+      await ctx.db.insert('weeklyReports', {
+        userId,
+        weekStart,
+        weekEnd,
+        status: 'ok',
+        narrativeMd,
+        statsJson: JSON.stringify({
+          sends_count: stats.sends,
+          top_grade: stats.topGrade,
+          send_rate: Math.round(stats.sendRate * 10000) / 10000,
+          total_attempts: stats.attempts,
+          gyms_visited: stats.gyms,
+          longest_send_streak: 0,
+          send_rate_delta_prev_week: 0,
+          send_rate_delta_baseline: 0,
+          top_grade_delta: 0,
+        }),
+        model: 'mock-seeded',
+        generatedAt: now,
+        error: null,
+      });
+      reportsCreated += 1;
+    }
+    return { reportsCreated };
+  },
+});

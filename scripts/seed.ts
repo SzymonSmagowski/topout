@@ -33,11 +33,13 @@ interface CliArgs {
   readonly rngSeed: number;
   readonly users: UsersFilter;
   readonly insertFollows: boolean;
+  readonly reportsPerUser: number;
 }
 
 interface SeedSummary {
   readonly deployment: string;
   readonly usersCreated: number;
+  readonly reportsCreated: number;
   readonly sessionsCreated: number;
   readonly attemptsCreated: number;
   readonly gymsEnsured: number;
@@ -54,9 +56,19 @@ function parseArgs(argv: readonly string[]): CliArgs {
   let rngSeed = 42;
   let users: UsersFilter = 'all';
   let insertFollows = true;
+  let reportsPerUser = 0;
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     switch (flag) {
+      case '--reports': {
+        const v = argv[i + 1];
+        if (v === undefined) die('--reports requires a numeric value');
+        const n = Number.parseInt(v, 10);
+        if (!Number.isFinite(n) || n < 0) die(`--reports must be a non-negative integer, got "${v}"`);
+        reportsPerUser = n;
+        i += 1;
+        break;
+      }
       case '--seed': {
         const v = argv[i + 1];
         if (v === undefined) die('--seed requires a numeric value');
@@ -96,7 +108,7 @@ function parseArgs(argv: readonly string[]): CliArgs {
         break;
     }
   }
-  return { rngSeed, users, insertFollows };
+  return { rngSeed, users, insertFollows, reportsPerUser };
 }
 
 function looksProd(deployment: string | undefined): boolean {
@@ -137,12 +149,15 @@ async function main(): Promise<void> {
   const client = new ConvexHttpClient(url);
   client.setAdminAuth(adminKey);
 
-  console.log(`Seeding ${url} (seed=${args.rngSeed}, users=${args.users}, follows=${args.insertFollows}) …`);
+  console.log(
+    `Seeding ${url} (seed=${args.rngSeed}, users=${args.users}, follows=${args.insertFollows}, reports=${args.reportsPerUser}) …`,
+  );
 
   const summary = (await client.action(internal.seedActions.run, {
     rngSeed: args.rngSeed,
     users: args.users,
     insertFollows: args.insertFollows,
+    reportsPerUser: args.reportsPerUser,
   })) as SeedSummary;
 
   console.log('Seed complete:');
@@ -152,6 +167,7 @@ async function main(): Promise<void> {
   console.log(`  sessions created ${summary.sessionsCreated}`);
   console.log(`  attempts created ${summary.attemptsCreated}`);
   console.log(`  follows created  ${summary.followsCreated}`);
+  console.log(`  reports created  ${summary.reportsCreated}`);
   console.log(`  duration         ${summary.durationMs} ms`);
 }
 
