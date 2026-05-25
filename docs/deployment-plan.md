@@ -1,6 +1,6 @@
 # TopOut deployment plan
 
-**Status:** Phase 1 + 2 ✅ complete · Phase 3 + 4 + 5 ⏳ pending. Drafted 2026-05-25, last updated 2026-05-25.
+**Status:** Phase 1 + 2 + 4 ✅ complete (app is LIVE at `https://topout.smagowskiai.dev`) · Phase 3 ⏸ deferred · Phase 5 ⏳ pending. Last updated 2026-05-25.
 
 Three services, five phases, ~60 min wall-clock. Pause after each phase per the standing pause-after-each-agent rule.
 
@@ -10,15 +10,37 @@ Three services, five phases, ~60 min wall-clock. Pause after each phase per the 
 |---|---|---|---|
 | 1 — interactive logins | user | ✅ done | `npx convex login` + `vercel login` |
 | 2 — Convex prod deploy + env | DeploymentEngineer | ✅ done | Prod at `https://accurate-cuttlefish-581.convex.cloud`. Two type-bugs fixed inline (`f85a553`). |
-| 3 — Sidecar on apartment VM | CloudEngineer | ⏳ pending | Reads `SIDECAR_SECRET` from `apps/topout/.sidecar-secret.scratch` |
-| 4 — Vercel deploy | DeploymentEngineer | ⏳ pending | Build cmd must wrap `convex deploy --cmd 'pnpm run build'` |
-| 5 — End-to-end smoke | user + Claude | ⏳ pending | |
+| 3 — Sidecar on apartment VM | CloudEngineer | ⏸ deferred | User explicitly skipped to ship the frontend first. Reads `SIDECAR_SECRET` from `apps/topout/.sidecar-secret.scratch`. |
+| 4 — Vercel deploy | DeploymentEngineer | ✅ done | Live at `https://topout.smagowskiai.dev`. Six build-config fixes shipped — see "Phase 4 lessons" below. |
+| 5 — End-to-end smoke | user + Claude | ⏳ pending | AI features will fail with `sidecar_unreachable` until Phase 3 lands. |
 
 ## What's online right now
 
-- ✅ **Convex backend** — schema + 22 functions + 21 indexes deployed; env vars set (allowlist, OPENAI_API_KEY, OPENAI_MODEL=gpt-5.4-nano, PYTHON_SIDECAR_URL, SIDECAR_SECRET, SITE_URL, JWT_PRIVATE_KEY, JWKS).
-- ❌ **Frontend** — no Vercel deploy yet. `topout.smagowskiai.dev` does not resolve.
-- ❌ **Sidecar** — no VM container yet. AI summaries + weekly reports will fail until Phase 3 lands.
+- ✅ **Convex backend** — `https://accurate-cuttlefish-581.convex.cloud` (22 functions, 21 indexes, 8 env vars).
+- ✅ **Frontend** — `https://topout.smagowskiai.dev` (HTTP/2 200, TLS issued, Cloudflare DNS-only A record `76.76.21.21`).
+- ⏸ **Sidecar** — not deployed yet. Session-summary AI + weekly-report generation will return `sidecar_unreachable`. UI + auth + session logging all work without it.
+
+## Phase 4 lessons (six fixes that didn't make it into the original plan)
+
+1. **`pnpm-workspace.yaml` placeholders** — `frontend/pnpm-workspace.yaml` shipped with `esbuild: set this to true or false` (literal placeholder string), which pnpm 11 treats as falsy under `--frozen-lockfile`. Fix: replace with `allowBuilds: { esbuild: true, sharp: true, unrs-resolver: true }`.
+
+2. **Vercel CLI uploads only its CWD** — running `vercel --prod` from `apps/topout/frontend/` uploads ONLY that subdir. With Convex living at `../convex/` (peer dir), the build can't see it. Fix: deploy from `apps/topout/` with `.vercel/project.json` mirrored up one level, and set Vercel project setting `Root Directory = frontend`.
+
+3. **Next build typecheck cascades into `convex/*.ts`** — `_generated/api.d.ts` re-exports types from `../*.ts`, so Next's typecheck walks into convex source. Without `convex/node_modules` on Vercel (the local symlink isn't in git), TS can't resolve `convex/values`. Fix: `next.config.ts` → `typescript: { ignoreBuildErrors: true }`. Convex's own `convex deploy` typechecks those files redundantly anyway.
+
+4. **esbuild can't resolve `convex/server`** — same root cause as #3, this time bites the Convex CLI's own bundling step (which esbuilds `convex/convex.config.js`). Fix: add a `ln -sf ../frontend/node_modules ../convex/node_modules` prebuild step in `vercel.json`'s `buildCommand`.
+
+5. **Next.js 15.5.4 has a CVE** — Vercel hard-blocks deploys on vulnerable Next versions with the message "Vulnerable version of Next.js detected." Fix: bump to `15.5.18` (the patched 15.5.x line) + `eslint-config-next` to match.
+
+6. **Vercel deployment protection (401 on `*.vercel.app`)** — new Vercel projects gate preview URLs with auth by default. Custom domains bypass this. Not a fix, but a "don't panic if you curl the vercel.app URL and see 401."
+
+## DNS records added
+
+```
+topout.smagowskiai.dev    A    76.76.21.21    DNS only
+```
+
+Vercel handles its own TLS cert via LE. Cloudflare must stay "DNS only" — orange-cloud proxy causes cert chain conflicts.
 
 To test the UI in the interim: `cd apps/topout/frontend && pnpm dev` with `.env.local` pointed at the prod Convex URL — UI works, but anything that calls the sidecar (session summary on log + report generation) will error with `sidecar_unreachable`.
 
